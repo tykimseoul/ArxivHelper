@@ -2,8 +2,9 @@ from flask import Flask, json, request
 from bs4 import BeautifulSoup
 import requests
 import re
+import time
 
-api = Flask(__name__)
+app = Flask(__name__)
 base_url = 'https://arxiv.org/abs/{}'
 
 
@@ -36,7 +37,7 @@ def parse_page(code):
     return {'title': title, 'authors': authors, 'pdf_link': pdf_link, 'abstract': abstract}
 
 
-@api.route('/arxiv', methods=['GET'])
+@app.route('/arxiv', methods=['GET'])
 def get_paper_data():
     code = request.args.get('code')
     data = parse_page(code)
@@ -44,4 +45,4 @@ def get_paper_data():
 
 
 if __name__ == '__main__':
-    api.run()
+    app.run()
