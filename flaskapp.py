@@ -30,6 +30,7 @@ def parse_page(code):
     html = get_html(base_url.format(code), 5)
     document = BeautifulSoup(html.text, "html.parser")
     title = document.select_one('h1.title').text
+    title = re.sub(r'^Title:', '', title)
     authors = list(map(lambda a: a.text, document.select('div.authors > a')))
     abstract = document.select_one('blockquote.abstract').findAll(text=True, recursive=False)
     abstract = list(filter(lambda a: a != '\n', abstract))
