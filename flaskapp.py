@@ -74,6 +74,7 @@ def extract_thumbnail(code):
                     print(img)
                     xref = img[0]
                     pix = fitz.Pixmap(doc, xref)
+                    pix = fitz.Pixmap(pix, 0)
                     store_thumbnail(pix, code)
                     break
     return read_thumbnail(code)
