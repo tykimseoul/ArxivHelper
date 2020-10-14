@@ -28,11 +28,11 @@ def get_html(url, t):
 def parse_cvf_page(url):
     html = get_html(url, 5)
     document = BeautifulSoup(html.text, "html.parser")
-    title = document.select_one('div#papertitle').text
+    title = document.select_one('div#papertitle').text.strip()
     authors = document.select_one('div#authors > b > i').text
     authors = authors.split(', ')
-    abstract = document.select_one('div#abstract').text
-    thumbnail = extract_cvf_thumbnail(url)
+    abstract = document.select_one('div#abstract').text.strip()
+    thumbnail, pdf_link = extract_cvf_thumbnail(url)
     buffer = BytesIO()
     thumbnail.save(buffer, format="JPEG")
     thumbnail = base64.b64encode(buffer.getvalue()).decode('utf-8')
@@ -40,15 +40,16 @@ def parse_cvf_page(url):
     print(authors)
     print(abstract)
     print(thumbnail)
-    return {'title': title, 'authors': authors, 'abstract': abstract, 'thumbnail': thumbnail}
+    return {'title': title, 'authors': authors, 'abstract': abstract, 'thumbnail': thumbnail, 'pdfLink': pdf_link}
 
 
 def extract_cvf_thumbnail(url):
     code = re.match(r'https://openaccess.thecvf.com/(\w+)/html/([\w-]+).html', url).groups()
+    pdf_link = 'https://openaccess.thecvf.com/{}/papers/{}.pdf'.format(code[0], code[1])
     if not check_thumbnail(code[1]):
-        response = requests.get('https://openaccess.thecvf.com/{}/papers/{}.pdf'.format(code[0], code[1]))
+        response = requests.get(pdf_link)
         store_thumbnail(response, code[1])
-    return read_thumbnail(code[1])
+    return read_thumbnail(code[1]), pdf_link
 
 
 @app.route('/', methods=['GET'])
@@ -67,9 +68,9 @@ def get_paper_data():
 
 
 def store_thumbnail(response, key):
-    with open('downloaded.pdf', 'wb') as f:
+    with open('/tmp/downloaded.pdf', 'wb') as f:
         f.write(response.content)
-        doc = fitz.open('downloaded.pdf')
+        doc = fitz.open('/tmp/downloaded.pdf')
         for i in range(len(doc)):
             images = doc.getPageImageList(i)
             if len(images) > 0:
@@ -77,8 +78,12 @@ def store_thumbnail(response, key):
                 print(img)
                 xref = img[0]
                 pix = fitz.Pixmap(doc, xref)
-                pix = fitz.Pixmap(pix, 0)
-                pix.writeImage('{}/{}.jpg'.format(str(thumbnails_dir), key))
+                try:
+                    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                    img.save('{}/{}.jpg'.format(str(thumbnails_dir), key), 'JPEG')
+                except ValueError:
+                    pix = fitz.Pixmap(pix, 0)
+                    pix.writeImage('{}/{}.jpg'.format(str(thumbnails_dir), key))
                 break
 
 
