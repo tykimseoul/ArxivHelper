@@ -40,7 +40,7 @@ def parse_cvf_page(url):
     print(authors)
     print(abstract)
     print(thumbnail)
-    return {'title': title, 'authors': authors, 'abstract': abstract, 'thumbnail': thumbnail, 'pdfLink': pdf_link}
+    return {'title': title, 'authors': authors, 'abstract': abstract, 'thumbnail': thumbnail, 'pdfLink': pdf_link, 'bookmarked': False}
 
 
 def extract_cvf_thumbnail(url):
