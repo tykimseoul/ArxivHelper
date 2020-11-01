@@ -10,7 +10,6 @@ from pdfminer.pdfinterp import PDFResourceManager
 from pdfminer.pdfinterp import PDFPageInterpreter
 from pdfminer.converter import PDFPageAggregator
 import jellyfish
-import matplotlib.pyplot as plt
 
 import numpy as np
 
@@ -56,11 +55,14 @@ def crawl(start_link, count=0):
     authors = list(map(lambda a: a.text, authors))
     abstract = document.select_one('blockquote.abstract').findAll(text=True, recursive=False)
     abstract = ''.join(abstract).strip()
-    paper_id = document.select_one('div.extra-services > div.full-text > ul > li > a.download-pdf').get('href')
-    paper_id = re.sub(r'^/pdf/', '', paper_id)
-    response = requests.get('https://arxiv.org/pdf/{}'.format(paper_id))
-    save_pdf(response, paper_id, title, authors, abstract)
-    count += 1
+    try:
+        paper_id = document.select_one('div.extra-services > div.full-text > ul > li > a.download-pdf').get('href')
+        paper_id = re.sub(r'^/pdf/', '', paper_id)
+        response = requests.get('https://arxiv.org/pdf/{}'.format(paper_id))
+        save_pdf(response, paper_id, title, authors, abstract)
+        count += 1
+    except AttributeError:
+        pass
     next_link = document.select_one('span.arrow > a.next-url').get('href')
     next_link = get_html('https://arxiv.org/{}'.format(next_link), 5).url
     crawl(next_link, count)
@@ -76,6 +78,8 @@ def save_pdf(response, key, title, authors, abstract):
         else:
             paper_size = 'a4'
         masks = mask_pdf(title, authors, abstract, pix)
+        if masks is None:
+            return
         file_name = re.sub(r'\.', '_', key)
         save_thumbnail(file_name, pix, paper_size)
         save_mask(file_name, pix, paper_size, masks)
@@ -98,6 +102,8 @@ def save_mask(key, pix, paper_size, masks):
 
 def mask_pdf(title, authors, abstract, pix):
     raw_boxes, text_boxes, text_lines = parse_layout()
+    if len(raw_boxes) * len(text_boxes) * len(text_lines) == 0:
+        return None
     title_boxes = list(filter(lambda b: b.bbox[1] > pix.height / 2, raw_boxes))
     title_box = sorted(title_boxes, key=lambda b: measure_distance(b.text[:min(len(b.text), len(title))], title))[0]
     author_boxes = list(filter(lambda b: b is not title_box, text_lines))
@@ -109,9 +115,6 @@ def mask_pdf(title, authors, abstract, pix):
 
 
 def measure_distance(text1, text2):
-    print(normalize_text(text1))
-    print(normalize_text(text2))
-    print(jellyfish.levenshtein_distance(normalize_text(text1), normalize_text(text2)))
     return jellyfish.levenshtein_distance(normalize_text(text1), normalize_text(text2))
 
 
@@ -182,4 +185,4 @@ def parse_layout():
 
 if __name__ == '__main__':
     target_count = 200
-    crawl('https://arxiv.org/abs/2010.11324')
+    crawl('https://arxiv.org/abs/2009.01001?context=cs')
