@@ -10,10 +10,20 @@ from pdfminer.pdfinterp import PDFResourceManager
 from pdfminer.pdfinterp import PDFPageInterpreter
 from pdfminer.converter import PDFPageAggregator
 import jellyfish
+import time
 
 import numpy as np
 
-from flaskapp import get_html
+
+def get_html(url, t):
+    print(url)
+    try:
+        return requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
+    except requests.exceptions.ConnectionError:
+        print('pausing for {}'.format(url))
+        time.sleep(t)
+        return get_html(url, t + 5)
+
 
 arxiv_base_link = 'https://arxiv.org/{}'
 temp_dir = Path("./tmp")
@@ -105,6 +115,8 @@ def mask_pdf(title, authors, abstract, pix):
     if len(raw_boxes) * len(text_boxes) * len(text_lines) == 0:
         return None
     title_boxes = list(filter(lambda b: b.bbox[1] > pix.height / 2, raw_boxes))
+    if len(title_boxes) == 0:
+        return None
     title_box = sorted(title_boxes, key=lambda b: measure_distance(b.text[:min(len(b.text), len(title))], title))[0]
     author_boxes = list(filter(lambda b: b is not title_box, text_lines))
     author_boxes = list(filter(lambda b: b.bbox[1] > pix.height / 2, author_boxes))
@@ -184,5 +196,5 @@ def parse_layout():
 
 
 if __name__ == '__main__':
-    target_count = 200
-    crawl('https://arxiv.org/abs/2009.01001?context=cs')
+    target_count = 20000
+    crawl('https://arxiv.org/abs/1908.00280?context=cs')
