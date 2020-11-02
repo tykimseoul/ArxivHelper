@@ -3,3 +3,5 @@ venv/bin
 venv/lib
 *.pem
 venv/man
+__pycache__
+tmp
