@@ -11,6 +11,7 @@ from pdfminer.pdfinterp import PDFPageInterpreter
 from pdfminer.converter import PDFPageAggregator
 import jellyfish
 import time
+from random import randint
 
 import numpy as np
 
@@ -60,12 +61,12 @@ def crawl(start_link, count=0):
         return
     html = get_html(start_link, 5)
     document = BeautifulSoup(html.text, "html.parser")
-    title = document.select_one('h1.title').find(text=True, recursive=False).strip()
-    authors = document.select('div.authors > a')
-    authors = list(map(lambda a: a.text, authors))
-    abstract = document.select_one('blockquote.abstract').findAll(text=True, recursive=False)
-    abstract = ''.join(abstract).strip()
     try:
+        title = document.select_one('h1.title').find(text=True, recursive=False).strip()
+        authors = document.select('div.authors > a')
+        authors = list(map(lambda a: a.text, authors))
+        abstract = document.select_one('blockquote.abstract').findAll(text=True, recursive=False)
+        abstract = ''.join(abstract).strip()
         paper_id = document.select_one('div.extra-services > div.full-text > ul > li > a.download-pdf').get('href')
         paper_id = re.sub(r'^/pdf/', '', paper_id)
         response = requests.get('https://arxiv.org/pdf/{}'.format(paper_id))
@@ -73,9 +74,14 @@ def crawl(start_link, count=0):
         count += 1
     except AttributeError:
         pass
-    next_link = document.select_one('span.arrow > a.next-url').get('href')
-    next_link = get_html('https://arxiv.org/{}'.format(next_link), 5).url
-    crawl(next_link, count)
+    try:
+        next_link = document.select_one('span.arrow > a.next-url').get('href')
+        next_link = get_html('https://arxiv.org/{}'.format(next_link), 5).url
+        time.sleep(randint(12, 17))
+        crawl(next_link, count)
+    except AttributeError:
+        print(document)
+        return
 
 
 def save_pdf(response, key, title, authors, abstract):
@@ -169,7 +175,6 @@ def parse_layout():
         temp_bbox = None
         temp_text = None
         for l in layout:
-            print(l)
             lines = list(filter(lambda b: isinstance(b, LTTextLine), l))
             for line in lines:
                 tokens = re.split(r',|\d|‡|†|\*', line.get_text())
@@ -197,4 +202,4 @@ def parse_layout():
 
 if __name__ == '__main__':
     target_count = 20000
-    crawl('https://arxiv.org/abs/1908.00280?context=cs')
+    crawl('https://arxiv.org/abs/{}{}.{}?context=cs'.format(str(randint(15, 19)), str(randint(1, 12)).zfill(2), str(randint(0, 10)*1000).zfill(5)))
