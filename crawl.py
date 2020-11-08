@@ -12,6 +12,8 @@ from pdfminer.converter import PDFPageAggregator
 import jellyfish
 import time
 from random import randint
+import pandas as pd
+import json
 
 import numpy as np
 
@@ -55,7 +57,7 @@ class TextArea:
         return self.__str__()
 
 
-def crawl(start_link, count=0):
+def crawl(start_link, count=0, t=int(time.time() * 1000)):
     print(count)
     if count == target_count:
         return
@@ -70,7 +72,7 @@ def crawl(start_link, count=0):
         paper_id = document.select_one('div.extra-services > div.full-text > ul > li > a.download-pdf').get('href')
         paper_id = re.sub(r'^/pdf/', '', paper_id)
         response = requests.get('https://arxiv.org/pdf/{}'.format(paper_id))
-        save_pdf(response, paper_id, title, authors, abstract)
+        save_pdf(response, paper_id, title, authors, abstract, t)
         count += 1
     except AttributeError:
         pass
@@ -78,13 +80,24 @@ def crawl(start_link, count=0):
         next_link = document.select_one('span.arrow > a.next-url').get('href')
         next_link = get_html('https://arxiv.org/{}'.format(next_link), 5).url
         time.sleep(randint(12, 17))
-        crawl(next_link, count)
+        crawl(next_link, count, t)
     except AttributeError:
         print(document)
         return
 
 
-def save_pdf(response, key, title, authors, abstract):
+def save_row(file_name, pix, t, masks):
+    try:
+        df = pd.read_csv('{}/metadata_{}.csv'.format(temp_dir, t), index_col=0)
+    except FileNotFoundError:
+        df = pd.DataFrame(columns=['file', 'width', 'height', 'title', 'authors', 'abstract'])
+    data = ['{}.png'.format(file_name), pix.width, pix.height, json.dumps(masks[0]), json.dumps(masks[1]), json.dumps(masks[2])]
+    df = pd.concat([df, pd.DataFrame([data], columns=df.columns)])
+    df.reset_index(drop=True, inplace=True)
+    df.to_csv('{}/metadata_{}.csv'.format(temp_dir, t))
+
+
+def save_pdf(response, key, title, authors, abstract, t):
     with open('{}/paper.pdf'.format(str(temp_dir)), 'wb') as f:
         f.write(response.content)
         doc = fitz.open('{}/paper.pdf'.format(str(temp_dir)))
@@ -98,7 +111,7 @@ def save_pdf(response, key, title, authors, abstract):
             return
         file_name = re.sub(r'\.', '_', key)
         save_thumbnail(file_name, pix, paper_size)
-        save_mask(file_name, pix, paper_size, masks)
+        save_row(file_name, pix, t, masks)
 
 
 def save_thumbnail(key, pix, paper_size):
@@ -202,4 +215,4 @@ def parse_layout():
 
 if __name__ == '__main__':
     target_count = 20000
-    crawl('https://arxiv.org/abs/{}{}.{}?context=cs'.format(str(randint(15, 19)), str(randint(1, 12)).zfill(2), str(randint(0, 10)*1000).zfill(5)))
+    crawl('https://arxiv.org/abs/{}{}.{}?context=cs'.format(str(randint(15, 19)), str(randint(1, 12)).zfill(2), str(randint(0, 10) * 1000).zfill(5)))
