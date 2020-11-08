@@ -31,18 +31,10 @@ def get_html(url, t):
 arxiv_base_link = 'https://arxiv.org/{}'
 temp_dir = Path("./tmp")
 temp_dir.mkdir(parents=True, exist_ok=True)
-covers_dir = Path("./tmp/covers")
+covers_dir = Path("./tmp/covers_nn")
 covers_dir.mkdir(parents=True, exist_ok=True)
 masks_dir = Path("./tmp/masks")
 masks_dir.mkdir(parents=True, exist_ok=True)
-covers_a4_dir = Path("./tmp/covers/a4")
-covers_a4_dir.mkdir(parents=True, exist_ok=True)
-covers_letter_dir = Path("./tmp/covers/letter")
-covers_letter_dir.mkdir(parents=True, exist_ok=True)
-masks_a4_dir = Path("./tmp/masks/a4")
-masks_a4_dir.mkdir(parents=True, exist_ok=True)
-masks_letter_dir = Path("./tmp/masks/letter")
-masks_letter_dir.mkdir(parents=True, exist_ok=True)
 
 
 class TextArea:
@@ -102,21 +94,17 @@ def save_pdf(response, key, title, authors, abstract, t):
         f.write(response.content)
         doc = fitz.open('{}/paper.pdf'.format(str(temp_dir)))
         pix = doc[0].getPixmap(alpha=False)
-        if (pix.width, pix.height) == (612, 792):
-            paper_size = 'letter'
-        else:
-            paper_size = 'a4'
         masks = mask_pdf(title, authors, abstract, pix)
         if masks is None:
             return
         file_name = re.sub(r'\.', '_', key)
-        save_thumbnail(file_name, pix, paper_size)
+        save_thumbnail(file_name, pix)
         save_row(file_name, pix, t, masks)
 
 
-def save_thumbnail(key, pix, paper_size):
+def save_thumbnail(key, pix):
     img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples).convert('L')
-    img.save('{}/{}/{}.png'.format(str(covers_dir), paper_size, key), 'PNG')
+    img.save('{}/{}.png'.format(str(covers_dir), key), 'PNG')
 
 
 def save_mask(key, pix, paper_size, masks):
