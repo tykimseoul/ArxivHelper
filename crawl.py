@@ -14,18 +14,14 @@ import time
 from random import randint
 import pandas as pd
 import json
+import schedule
 
 import numpy as np
 
 
 def get_html(url, t):
     print(url)
-    try:
-        return requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
-    except requests.exceptions.ConnectionError:
-        print('pausing for {}'.format(url))
-        time.sleep(t)
-        return get_html(url, t + 5)
+    return requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
 
 
 arxiv_base_link = 'https://arxiv.org/{}'
@@ -35,6 +31,10 @@ covers_dir = Path("./tmp/covers_nn")
 covers_dir.mkdir(parents=True, exist_ok=True)
 masks_dir = Path("./tmp/masks")
 masks_dir.mkdir(parents=True, exist_ok=True)
+redaction_dir = Path("./tmp/redaction_nn")
+redaction_dir.mkdir(parents=True, exist_ok=True)
+redaction_label_dir = Path("./tmp/redaction_label_nn")
+redaction_label_dir.mkdir(parents=True, exist_ok=True)
 
 
 class TextArea:
@@ -71,7 +71,7 @@ def crawl(start_link, count=0, t=int(time.time() * 1000)):
     try:
         next_link = document.select_one('span.arrow > a.next-url').get('href')
         next_link = get_html('https://arxiv.org/{}'.format(next_link), 5).url
-        time.sleep(randint(12, 17))
+        time.sleep(randint(10, 15))
         crawl(next_link, count, t)
     except AttributeError:
         print(document)
@@ -80,13 +80,13 @@ def crawl(start_link, count=0, t=int(time.time() * 1000)):
 
 def save_row(file_name, pix, t, masks):
     try:
-        df = pd.read_csv('{}/metadata_{}.csv'.format(temp_dir, t), index_col=0)
+        df = pd.read_csv('{}/metadata_{}.csv'.format(redaction_label_dir, t), index_col=0)
     except FileNotFoundError:
-        df = pd.DataFrame(columns=['file', 'width', 'height', 'title', 'authors', 'abstract'])
-    data = ['{}.png'.format(file_name), pix.width, pix.height, json.dumps(masks[0]), json.dumps(masks[1]), json.dumps(masks[2])]
+        df = pd.DataFrame(columns=['file', 'width', 'height', 'title', 'authors', 'abstract', 'redaction'])
+    data = ['{}.png'.format(file_name), pix.width, pix.height, json.dumps(masks[0]), json.dumps(masks[1]), json.dumps(masks[2]), json.dumps(masks[3])]
     df = pd.concat([df, pd.DataFrame([data], columns=df.columns)])
     df.reset_index(drop=True, inplace=True)
-    df.to_csv('{}/metadata_{}.csv'.format(temp_dir, t))
+    df.to_csv('{}/metadata_{}.csv'.format(redaction_label_dir, t))
 
 
 def save_pdf(response, key, title, authors, abstract, t):
@@ -98,7 +98,8 @@ def save_pdf(response, key, title, authors, abstract, t):
         if masks is None:
             return
         file_name = re.sub(r'\.', '_', key)
-        save_thumbnail(file_name, pix)
+        # save_thumbnail(file_name, pix)
+        save_redaction(file_name, pix, masks)
         save_row(file_name, pix, t, masks)
 
 
@@ -117,6 +118,15 @@ def save_mask(key, pix, paper_size, masks):
     mask.save('{}/{}/{}.png'.format(str(masks_dir), paper_size, key), 'PNG')
 
 
+def save_redaction(key, pix, masks):
+    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples).convert('L')
+    img = np.array(img)
+    for bbox in masks[3]:
+        img[pix.height - int(bbox[3]):pix.height - int(bbox[1]), int(bbox[0]):int(bbox[2])] = 0
+    mask = Image.fromarray(img)
+    mask.save('{}/{}.png'.format(str(redaction_dir), key), 'PNG')
+
+
 def mask_pdf(title, authors, abstract, pix):
     raw_boxes, text_boxes, text_lines = parse_layout()
     if len(raw_boxes) * len(text_boxes) * len(text_lines) == 0:
@@ -130,7 +140,7 @@ def mask_pdf(title, authors, abstract, pix):
     authors_boxes = list(map(lambda a: sorted(author_boxes, key=lambda b: measure_distance(b.text, a))[0], authors))
     abstract_box = sorted(text_boxes, key=lambda b: measure_distance_for_abstracts(b.text, abstract))[0]
     print(normalize_text(title_box.text), list(map(lambda a: normalize_text(a.text), authors_boxes)), normalize_text(abstract_box.text))
-    return title_box.bbox, list(map(lambda b: b.bbox, authors_boxes)), abstract_box.bbox
+    return title_box.bbox, list(map(lambda b: b.bbox, authors_boxes)), abstract_box.bbox, list(map(lambda b: b.bbox, raw_boxes))
 
 
 def measure_distance(text1, text2):
@@ -203,4 +213,16 @@ def parse_layout():
 
 if __name__ == '__main__':
     target_count = 20000
-    crawl('https://arxiv.org/abs/{}{}.{}?context=cs'.format(str(randint(15, 19)), str(randint(1, 12)).zfill(2), str(randint(0, 10) * 1000).zfill(5)))
+
+
+    def start_crawling():
+        try:
+            crawl('https://arxiv.org/abs/{}{}.{}?context=cs'.format(str(randint(15, 19)), str(randint(1, 12)).zfill(2), str(randint(0, 10) * 1000).zfill(5)))
+        except Exception:
+            return
+
+
+    schedule.every(30).minutes.do(start_crawling)
+
+    while True:
+        schedule.run_pending()
