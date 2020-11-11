@@ -21,7 +21,7 @@ import numpy as np
 
 def get_html(url, t):
     print(url)
-    return requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
+    return requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
 
 
 arxiv_base_link = 'https://arxiv.org/{}'
@@ -216,13 +216,15 @@ if __name__ == '__main__':
 
 
     def start_crawling():
+        print('starting crawling..')
         try:
             crawl('https://arxiv.org/abs/{}{}.{}?context=cs'.format(str(randint(15, 19)), str(randint(1, 12)).zfill(2), str(randint(0, 10) * 1000).zfill(5)))
         except Exception:
+            print('exception caught')
             return
 
 
-    schedule.every(30).minutes.do(start_crawling)
+    schedule.every(10).minutes.do(start_crawling)
 
     while True:
         schedule.run_pending()
