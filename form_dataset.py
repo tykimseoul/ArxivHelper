@@ -4,6 +4,8 @@ import pandas as pd
 import os
 import json
 import matplotlib.pyplot as plt
+import numpy as np
+from PIL import Image
 
 
 def concat_dataframe():
@@ -68,8 +70,18 @@ train_dir.mkdir(parents=True, exist_ok=True)
 shutil.rmtree('./train_data/to_train')
 train_dir = Path("./train_data/to_train")
 train_dir.mkdir(parents=True, exist_ok=True)
+area_dir = Path('./train_data/area')
+area_dir.mkdir(parents=True, exist_ok=True)
 
-df = filter_dataframe()
+
+def save_as_image(key, abstract_0, abstract_1, abstract_2, abstract_3):
+    img = np.round(np.array([abstract_0, abstract_1, abstract_2, abstract_3]) * 255, decimals=0)
+    img = Image.fromarray(img).convert('L')
+    img.save('{}/{}'.format(area_dir, key))
+
+
+df = pd.read_csv('./train_data/filtered.csv', index_col=0)
+df.apply(lambda r: save_as_image(r['file'], r['abstract_0'], r['abstract_1'], r['abstract_2'], r['abstract_3']), axis=1)
 
 for idx, file in enumerate(df['file'].tolist()):
     print(idx, file)
