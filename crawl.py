@@ -63,6 +63,9 @@ def crawl(start_link, count=0, t=int(time.time() * 1000)):
         abstract = ''.join(abstract).strip()
         paper_id = document.select_one('div.extra-services > div.full-text > ul > li > a.download-pdf').get('href')
         paper_id = re.sub(r'^/pdf/', '', paper_id)
+        if Path('{}/{}.png'.format(str(redaction_dir), paper_id)).exists() or Path('./train_data/redaction_nn/{}.png'.format(paper_id)).exists():
+            print('duplicate file')
+            raise Exception
         response = requests.get('https://arxiv.org/pdf/{}'.format(paper_id))
         save_pdf(response, paper_id, title, authors, abstract, t)
         count += 1
@@ -224,7 +227,7 @@ if __name__ == '__main__':
             return
 
 
-    schedule.every(10).minutes.do(start_crawling)
+    schedule.every(5).minutes.do(start_crawling)
 
     while True:
         schedule.run_pending()
