@@ -58,12 +58,12 @@ def filter_dataframe():
     plt.scatter(df['redaction_area'], df['abstract_area'])
     plt.axes().set_aspect('equal', adjustable='box')
     plt.show()
+    df.drop(['redaction', 'title', 'abstract'], axis=1, inplace=True)
     print(len(df))
     return df
 
 
 concat_dataframe()
-filter_dataframe()
 
 train_dir = Path("./train_data/to_train")
 train_dir.mkdir(parents=True, exist_ok=True)
@@ -80,12 +80,14 @@ def save_as_image(key, abstract_0, abstract_1, abstract_2, abstract_3):
     img.save('{}/{}'.format(area_dir, key))
 
 
-df = pd.read_csv('./train_data/filtered.csv', index_col=0)
-df.apply(lambda r: save_as_image(r['file'], r['abstract_0'], r['abstract_1'], r['abstract_2'], r['abstract_3']), axis=1)
-
-for idx, file in enumerate(df['file'].tolist()):
-    print(idx, file)
+def move_file(file):
     try:
         shutil.copy('./train_data/redaction_nn/' + file, train_dir)
     except FileNotFoundError:
         pass
+
+
+df = filter_dataframe()
+df.to_csv('./train_data/filtered.csv')
+df.apply(lambda r: save_as_image(r['file'], r['abstract_0'], r['abstract_1'], r['abstract_2'], r['abstract_3']), axis=1)
+df.apply(lambda r: move_file(r['file']), axis=1)
