@@ -63,7 +63,8 @@ def crawl(start_link, count=0, t=int(time.time() * 1000)):
         abstract = ''.join(abstract).strip()
         paper_id = document.select_one('div.extra-services > div.full-text > ul > li > a.download-pdf').get('href')
         paper_id = re.sub(r'^/pdf/', '', paper_id)
-        if Path('{}/{}.png'.format(str(redaction_dir), paper_id)).exists() or Path('./train_data/redaction_nn/{}.png'.format(paper_id)).exists():
+        key = re.sub(r'\.', '_', paper_id)
+        if Path('{}/{}.png'.format(str(covers_dir), key)).exists():
             print('duplicate file')
             raise Exception
         response = requests.get('https://arxiv.org/pdf/{}'.format(paper_id))
@@ -81,12 +82,12 @@ def crawl(start_link, count=0, t=int(time.time() * 1000)):
         return
 
 
-def save_row(file_name, pix, t, masks):
+def save_row(file_name, pix, t, masks, title, authors, abstract):
     try:
         df = pd.read_csv('{}/metadata_{}.csv'.format(redaction_label_dir, t), index_col=0)
     except FileNotFoundError:
-        df = pd.DataFrame(columns=['file', 'width', 'height', 'title', 'authors', 'abstract', 'redaction'])
-    data = ['{}.png'.format(file_name), pix.width, pix.height, json.dumps(masks[0]), json.dumps(masks[1]), json.dumps(masks[2]), json.dumps(masks[3])]
+        df = pd.DataFrame(columns=['file', 'title', 'authors', 'abstract', 'width', 'height', 'title_bbox', 'authors_bbox', 'abstract_bbox', 'redaction_bbox'])
+    data = ['{}.png'.format(file_name), title, authors, abstract, pix.width, pix.height, json.dumps(masks[0]), json.dumps(masks[1]), json.dumps(masks[2]), json.dumps(masks[3])]
     df = pd.concat([df, pd.DataFrame([data], columns=df.columns)])
     df.reset_index(drop=True, inplace=True)
     df.to_csv('{}/metadata_{}.csv'.format(redaction_label_dir, t))
@@ -101,9 +102,9 @@ def save_pdf(response, key, title, authors, abstract, t):
         if masks is None:
             return
         file_name = re.sub(r'\.', '_', key)
-        # save_thumbnail(file_name, pix)
-        save_redaction(file_name, pix, masks)
-        save_row(file_name, pix, t, masks)
+        save_thumbnail(file_name, pix)
+        # save_redaction(file_name, pix, masks)
+        save_row(file_name, pix, t, masks, title, authors, abstract)
 
 
 def save_thumbnail(key, pix):
@@ -221,7 +222,7 @@ if __name__ == '__main__':
     def start_crawling():
         print('starting crawling..')
         try:
-            crawl('https://arxiv.org/abs/{}{}.{}?context=cs'.format(str(randint(15, 19)), str(randint(1, 12)).zfill(2), str(randint(0, 10) * 1000).zfill(5)))
+            crawl('https://arxiv.org/abs/{}{}.{}?context=cs'.format(str(randint(15, 19)), str(randint(1, 12)).zfill(2), str(randint(0, 100) * 100).zfill(5)))
         except Exception:
             print('exception caught')
             return
