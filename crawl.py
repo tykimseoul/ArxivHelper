@@ -20,7 +20,7 @@ import numpy as np
 
 
 def get_html(url, t):
-    print(url)
+    # print(url)
     return requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
 
 
@@ -52,7 +52,8 @@ class TextArea:
 def crawl(start_link, count=0, t=int(time.time() * 1000)):
     print(count)
     if count == target_count:
-        return
+        print('file count limit reached')
+        raise Exception
     html = get_html(start_link, 5)
     document = BeautifulSoup(html.text, "html.parser")
     try:
@@ -65,7 +66,7 @@ def crawl(start_link, count=0, t=int(time.time() * 1000)):
         paper_id = re.sub(r'^/pdf/', '', paper_id)
         key = re.sub(r'\.', '_', paper_id)
         if Path('{}/{}.png'.format(str(covers_dir), key)).exists():
-            print('duplicate file')
+            print('duplicate file: {}'.format(key))
             raise Exception
         response = requests.get('https://arxiv.org/pdf/{}'.format(paper_id))
         save_pdf(response, paper_id, title, authors, abstract, t)
@@ -79,7 +80,7 @@ def crawl(start_link, count=0, t=int(time.time() * 1000)):
         crawl(next_link, count, t)
     except AttributeError:
         print(document)
-        return
+        raise Exception
 
 
 def save_row(file_name, pix, t, masks, title, authors, abstract):
@@ -143,7 +144,7 @@ def mask_pdf(title, authors, abstract, pix):
     author_boxes = list(filter(lambda b: b.bbox[1] > pix.height / 2, author_boxes))
     authors_boxes = list(map(lambda a: sorted(author_boxes, key=lambda b: measure_distance(b.text, a))[0], authors))
     abstract_box = sorted(text_boxes, key=lambda b: measure_distance_for_abstracts(b.text, abstract))[0]
-    print(normalize_text(title_box.text), list(map(lambda a: normalize_text(a.text), authors_boxes)), normalize_text(abstract_box.text))
+    # print(normalize_text(title_box.text), list(map(lambda a: normalize_text(a.text), authors_boxes)), normalize_text(abstract_box.text))
     return title_box.bbox, list(map(lambda b: b.bbox, authors_boxes)), abstract_box.bbox, list(map(lambda b: b.bbox, raw_boxes))
 
 
@@ -216,7 +217,7 @@ def parse_layout():
 
 
 if __name__ == '__main__':
-    target_count = 20000
+    target_count = 800
 
 
     def start_crawling():
@@ -228,7 +229,7 @@ if __name__ == '__main__':
             return
 
 
-    schedule.every(5).minutes.do(start_crawling)
+    schedule.every(2).minutes.do(start_crawling)
 
     while True:
         schedule.run_pending()
