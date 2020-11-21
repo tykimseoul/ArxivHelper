@@ -7,6 +7,12 @@ import tensorflow.keras.backend as K
 import tensorflow as tf
 import numpy as np
 
+title = [255, 0, 0]
+author = [0, 255, 0]
+abstract = [0, 0, 255]
+other = [0, 0, 0]
+color_map = np.array([title, author, abstract, other])
+
 
 def cast_f(x):
     return K.cast(x, K.floatx())
@@ -110,7 +116,7 @@ class Unet:
 
     def build(self):
         inputs = Input(self.input_size)
-        print(inputs.shape)
+
         conv1 = Conv2D(32, 3, activation='relu', padding='same', kernel_initializer='he_normal')(inputs)
         conv1 = Conv2D(32, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv1)
         pool1 = MaxPooling2D(pool_size=(2, 2))(conv1)
@@ -156,7 +162,7 @@ class Unet:
 
         model = Model(inputs, conv10)
 
-        model.compile(optimizer=Adam(lr=1e-4), loss=IoULoss, metrics=IoU)
+        model.compile(optimizer=Adam(lr=1e-4), loss='categorical_crossentropy', metrics='accuracy')
 
         model.summary()
 
@@ -174,16 +180,17 @@ class Unet:
 
 def adjust_data(img, mask, num_class):
     img = img / 255
-    mask = mask[:, :, :, 0] if (len(mask.shape) == 4) else mask[:, :, 0]
-    new_mask = np.zeros(mask.shape + (num_class,))
-    # print(new_mask.shape)
-    for i in range(num_class):
-        # for one pixel in the image, find the class in mask and convert it into one-hot vector
-        new_mask[mask == i, i] = 1
-    # new_mask = np.reshape(new_mask, (new_mask.shape[0], new_mask.shape[1] * new_mask.shape[2], new_mask.shape[3]))
-    mask = new_mask
+    if len(mask.shape) == 3:
+        mask = np.expand_dims(mask, 0)
+    reshaped_mask = np.reshape(mask, [mask.shape[0], mask.shape[1] * mask.shape[2], mask.shape[3]])
+    new_mask = np.zeros(reshaped_mask.shape[:2] + (num_class,))
+    for b in range(reshaped_mask.shape[0]):
+        # for each batch
+        for i, color in enumerate(color_map):
+            new_mask[b, np.all(reshaped_mask[b] == color, axis=-1), i] = 1
+    new_mask = np.reshape(new_mask, (mask.shape[0], mask.shape[1], mask.shape[2], new_mask.shape[2]))
     # print(img.shape, mask.shape)
-    return img, mask
+    return img, new_mask
 
 
 def train_data_generator(batch_size, train_path, image_folder, mask_folder, aug_dict, image_color_mode="grayscale",

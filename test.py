@@ -3,15 +3,14 @@ import cv2
 from train import *
 from PIL import Image
 
-title = [255, 0, 0]
-author = [0, 255, 0]
-abstract = [0, 0, 255]
-other = [0, 0, 0]
-COLOR_DICT = np.array([title, author, abstract, other])
+title = [1, 0, 0, 0]
+author = [0, 1, 0, 0]
+abstract = [0, 0, 1, 0]
+color_map = np.array([title, author, abstract])
 
 
 def test_generator(test_path, target_size=(512, 512)):
-    for i in sorted(os.listdir(test_path))[:10]:
+    for i in sorted(os.listdir(test_path)):
         print(i)
         img = cv2.imread(test_path + i, cv2.IMREAD_GRAYSCALE)
         img = img / 255
@@ -20,19 +19,23 @@ def test_generator(test_path, target_size=(512, 512)):
         yield img
 
 
-def label_visualize(num_class, color_dict, img):
-    img = img[:, :, 0] if len(img.shape) == 3 else img
-    img_out = np.zeros(img.shape + (3,))
-    for i in range(num_class):
-        img_out[img == i, :] = color_dict[i]
+def label_visualize(img):
+    reshaped_img = np.reshape(img, [img.shape[0] * img.shape[1], img.shape[2]])
+    maxed_img = np.zeros_like(reshaped_img)
+    maxed_img[np.arange(len(reshaped_img)), reshaped_img.argmax(axis=1)] = 1
+    img_out = np.zeros(maxed_img.shape[:1] + (3,))
+    for i, color in enumerate(color_map):
+        img_out[np.all(maxed_img == color, axis=-1), i] = 255
+    img_out = np.reshape(img_out, (img.shape[:2] + (3,)))
     return img_out
 
 
-def save_result(npyfile, num_class):
+def save_result(npyfile):
     print(npyfile.shape)
     for i, item in enumerate(npyfile):
-        img = label_visualize(num_class, COLOR_DICT, item)
+        img = label_visualize(item)
         img = Image.fromarray(img.astype(np.uint8))
+        img = img.resize((612, 792))
         img.save('./results/result_{}.png'.format(i))
 
 
@@ -40,4 +43,4 @@ testGene = test_generator('./test_data/covers/')
 model = Unet(4)
 model.load_weights("./unet_membrane.hdf5")
 results = model.predict(testGene, 10, verbose=1)
-save_result(results, 4)
+save_result(results)
