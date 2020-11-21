@@ -68,10 +68,11 @@ concat_dataframe()
 train_dir = Path("./train_data/to_train")
 train_dir.mkdir(parents=True, exist_ok=True)
 shutil.rmtree('./train_data/to_train')
-train_dir = Path("./train_data/to_train")
 train_dir.mkdir(parents=True, exist_ok=True)
 area_dir = Path('./train_data/area')
 area_dir.mkdir(parents=True, exist_ok=True)
+mask_dir = Path('./train_data/mask')
+mask_dir.mkdir(parents=True, exist_ok=True)
 
 
 def save_as_image(key, abstract_0, abstract_1, abstract_2, abstract_3):
@@ -87,7 +88,16 @@ def move_file(file):
         pass
 
 
+def make_mask(key, width, height, title_0, title_1, title_2, title_3, abstract_0, abstract_1, abstract_2, abstract_3):
+    img = np.zeros((height, width, 3), np.uint8)
+    img[height - int(title_3 * height): height - int(title_1 * height), int(title_0 * width):int(title_2 * width), :] = [255, 0, 0]
+    img[height - int(abstract_3 * height): height - int(abstract_1 * height), int(abstract_0 * width):int(abstract_2 * width), :] = [0, 0, 255]
+    img = Image.fromarray(img)
+    img.save('{}/{}'.format(mask_dir, key))
+
+
 df = filter_dataframe()
 df.to_csv('./train_data/filtered.csv')
 df.apply(lambda r: save_as_image(r['file'], r['abstract_0'], r['abstract_1'], r['abstract_2'], r['abstract_3']), axis=1)
 df.apply(lambda r: move_file(r['file']), axis=1)
+df.apply(lambda r: make_mask(r['file'], r['width'], r['height'], r['title_0'], r['title_1'], r['title_2'], r['title_3'], r['abstract_0'], r['abstract_1'], r['abstract_2'], r['abstract_3']), axis=1)
