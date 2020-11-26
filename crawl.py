@@ -58,13 +58,18 @@ def crawl(id):
     if Path('{}/{}.pdf'.format(str(pdf_dir), id)).exists() or Path('{}/{}.txt'.format(str(skip_dir), id)).exists():
         return
     time.sleep(1)
-    print('trying', id)
     id = re.sub('_', '.', id)
 
+    def skip(msg, id):
+        f = open('{}/{}.txt'.format(skip_dir, id), "x")
+        f.close()
+        print(msg, id)
+
+    file_name = re.sub(r'\.', '_', str(id))
     try:
         response = requests.get('https://export.arxiv.org/pdf/{}'.format(id), timeout=(2, 3))
     except requests.exceptions.Timeout:
-        print('timeout error')
+        skip('timeout error', file_name)
         return
 
     # document = BeautifulSoup(response.text, "html.parser")
@@ -76,7 +81,6 @@ def crawl(id):
     #         return
     # except AttributeError:
     #     pass
-    file_name = re.sub(r'\.', '_', str(id))
     with open('{}/paper_{}.pdf'.format(str(temp_dir), file_name), 'wb') as f:
         f.write(response.content)
         try:
@@ -84,12 +88,11 @@ def crawl(id):
             doc.select([0])
             doc.save('{}/{}.pdf'.format(str(pdf_dir), file_name))
             os.remove('{}/paper_{}.pdf'.format(str(temp_dir), file_name))
-            print('saving', id)
+            print('saving', file_name)
         except:
-            print('runtime error', file_name)
-            f = open('{}/{}.txt'.format(skip_dir, re.sub(r'\.', '_', id)), "x")
-            f.close()
-            print('skipping', file_name)
+            skip('runtime error', file_name)
+            if Path('{}/paper_{}.pdf'.format(str(temp_dir), file_name)).exists():
+                os.remove('{}/paper_{}.pdf'.format(str(temp_dir), file_name))
             return
 
 
@@ -98,9 +101,9 @@ if __name__ == '__main__':
     # df = pd.read_csv('./metadata.csv')
     # df = df[df['id'].str.match(r'\d{4}_\d{4,5}')]
     # print(len(df))
-    # df = df.sample(n=30000)
-    # df.to_csv('./sampled_metadata.csv')
-    df = pd.read_csv('./sampled_metadata.csv')
+    # df = df.sample(n=40000)
+    # df.to_csv('./sampled_metadata_{}.csv'.format(int(time.time())))
+    df = pd.read_csv('./sampled_metadata_1606382293.csv')
 
     processes = 8
     chunk_size = int(len(df) / processes)
