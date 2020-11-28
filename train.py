@@ -3,112 +3,12 @@ from tensorflow.keras.layers import *
 from tensorflow.keras.optimizers import *
 from tensorflow.keras.callbacks import *
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
-import tensorflow.keras.backend as K
-import tensorflow as tf
 import numpy as np
-
-title = [255, 0, 0]
-author = [0, 255, 0]
-abstract = [0, 0, 255]
-other = [0, 0, 0]
-color_map = np.array([title, author, abstract, other])
-
-
-def cast_f(x):
-    return K.cast(x, K.floatx())
-
-
-def cast_b(x):
-    return K.cast(x, bool)
-
-
-def iou_loss_core(true, pred):  # this can be used as a loss if you make it negative
-    intersection = true * pred
-    not_true = 1 - true
-    union = true + (not_true * pred)
-
-    return (K.sum(intersection, axis=-1) + K.epsilon()) / (K.sum(union, axis=-1) + K.epsilon())
-
-
-def iou_metric(true, pred):  # any shape can go - can't be a loss function
-
-    thresholds = [0.5 + (i * .05) for i in range(10)]
-
-    # flattened images (batch, pixels)
-    true = K.batch_flatten(true)
-    pred = K.batch_flatten(pred)
-    pred = cast_f(K.greater(pred, 0.5))
-
-    # total white pixels - (batch,)
-    true_sum = K.sum(true, axis=-1)
-    pred_sum = K.sum(pred, axis=-1)
-
-    # has mask or not per image - (batch,)
-    true1 = cast_f(K.greater(true_sum, 1))
-    pred1 = cast_f(K.greater(pred_sum, 1))
-
-    # to get images that have mask in both true and pred
-    true_positive_mask = cast_b(true1 * pred1)
-
-    # separating only the possible true positives to check iou
-    test_true = tf.boolean_mask(true, true_positive_mask)
-    test_pred = tf.boolean_mask(pred, true_positive_mask)
-
-    # getting iou and threshold comparisons
-    iou = iou_loss_core(test_true, test_pred)
-    true_positives = [cast_f(K.greater(iou, tres)) for tres in thresholds]
-
-    # mean of thresholds for true positives and total sum
-    true_positives = K.mean(K.stack(true_positives, axis=-1), axis=-1)
-    true_positives = K.sum(true_positives)
-
-    # to get images that don't have mask in both true and pred
-    true_negatives = (1 - true1) * (1 - pred1)  # = 1 -true1 - pred1 + true1*pred1
-    true_negatives = K.sum(true_negatives)
-
-    return (true_positives + true_negatives) / cast_f(K.shape(true)[0])
-
-
-def IoULoss(y_true, y_pred, smooth=0):
-    # flatten label and prediction tensors
-
-    y_pred = K.batch_flatten(y_pred)
-    y_true = K.batch_flatten(y_true)
-    print(y_pred.shape)
-    print(y_true.shape)
-
-    intersection = K.sum(K.batch_dot(y_true, y_pred), keepdims=False)
-    print('intx', intersection.shape)
-    total = K.sum(y_true, keepdims=False) + K.sum(y_pred, keepdims=False)
-    print('total', total.shape)
-    union = total - intersection
-
-    IoU = (intersection + smooth) / (union + smooth)
-
-    return 1 - IoU
-
-
-def IoU(y_true, y_pred, smooth=0):
-    # flatten label and prediction tensors
-
-    y_pred = K.batch_flatten(y_pred)
-    y_true = K.batch_flatten(y_true)
-    print(y_pred.shape)
-    print(y_true.shape)
-
-    intersection = K.sum(K.batch_dot(y_true, y_pred), keepdims=False)
-    print('intx', intersection.shape)
-    total = K.sum(y_true, keepdims=False) + K.sum(y_pred, keepdims=False)
-    print('total', total.shape)
-    union = total - intersection
-
-    IoU = (intersection + smooth) / (union + smooth)
-
-    return IoU
+from scipy import ndimage
 
 
 class Unet:
-    def __init__(self, num_class, input_size=(512, 512, 1)):
+    def __init__(self, num_class, input_size=(400, 400, 2)):
         self.base_model = None
         self.input_size = input_size
         self.num_class = num_class
@@ -168,18 +68,31 @@ class Unet:
 
         return model
 
-    def fit(self, data, steps_per_epoch, epochs, callbacks):
-        self.model.fit_generator(data, steps_per_epoch=steps_per_epoch, epochs=epochs, callbacks=callbacks)
-
-    def predict(self, test_gene, batch_size, verbose):
-        return self.model.predict(test_gene, batch_size, verbose=verbose)
-
-    def load_weights(self, weights):
-        self.model.load_weights(weights)
-
 
 def adjust_data(img, mask, num_class):
+    def delineate(img):
+        def sobel(img, size):
+            img = ndimage.maximum_filter(img, size=size)
+            img = np.around(img)
+            sx = ndimage.sobel(img, axis=0, mode='constant')
+            sy = ndimage.sobel(img, axis=1, mode='constant')
+            sobel = np.hypot(sx, sy)
+            gaussian = ndimage.gaussian_filter(sobel, sigma=3)
+            return gaussian
+
+        img = 1 - img
+
+        sobel1 = sobel(img, size=10)
+        sobel2 = sobel(img, size=16)
+        sobel3 = sobel(img, size=22)
+
+        avg = np.mean([sobel1, sobel2, sobel3], axis=0)
+        avg /= np.amax(avg)
+
+        return img
+
     img = img / 255
+    boundary = delineate(img)
     if len(mask.shape) == 3:
         mask = np.expand_dims(mask, 0)
     reshaped_mask = np.reshape(mask, [mask.shape[0], mask.shape[1] * mask.shape[2], mask.shape[3]])
@@ -189,22 +102,21 @@ def adjust_data(img, mask, num_class):
         for i, color in enumerate(color_map):
             new_mask[b, np.all(reshaped_mask[b] == color, axis=-1), i] = 1
     new_mask = np.reshape(new_mask, (mask.shape[0], mask.shape[1], mask.shape[2], new_mask.shape[2]))
-    # print(img.shape, mask.shape)
-    return img, new_mask
+    mask = new_mask
+    return img, boundary, mask
 
 
-def train_data_generator(batch_size, train_path, image_folder, mask_folder, aug_dict, image_color_mode="grayscale",
-                         mask_color_mode="rgb", image_save_prefix="image", mask_save_prefix="mask", num_class=4,
-                         save_to_dir=None, target_size=(512, 512), seed=1):
+def train_data_generator(batch_size, image_path, mask_path, image_folder, mask_folder, aug_dict, num_class, image_color_mode="grayscale",
+                         mask_color_mode="rgb", image_save_prefix="image", mask_save_prefix="mask",
+                         save_to_dir=None, target_size=(400, 400), seed=1):
     """
     can generate image and mask at the same time
     use the same seed for image_datagen and mask_datagen to ensure the transformation for image and mask is the same
     if you want to visualize the results of generator, set save_to_dir = "your path"
     """
-    image_datagen = ImageDataGenerator(**aug_dict)
-    mask_datagen = ImageDataGenerator(**aug_dict)
-    image_generator = image_datagen.flow_from_directory(
-        train_path,
+    train_datagen = ImageDataGenerator(**aug_dict)
+    image_train_generator = train_datagen.flow_from_directory(
+        image_path,
         classes=[image_folder],
         class_mode=None,
         color_mode=image_color_mode,
@@ -212,9 +124,21 @@ def train_data_generator(batch_size, train_path, image_folder, mask_folder, aug_
         batch_size=batch_size,
         save_to_dir=save_to_dir,
         save_prefix=image_save_prefix,
-        seed=seed)
-    mask_generator = mask_datagen.flow_from_directory(
-        train_path,
+        seed=seed,
+        subset='training')
+    image_valid_generator = train_datagen.flow_from_directory(
+        image_path,
+        classes=[image_folder],
+        class_mode=None,
+        color_mode=image_color_mode,
+        target_size=target_size,
+        batch_size=batch_size,
+        save_to_dir=save_to_dir,
+        save_prefix=image_save_prefix,
+        seed=seed,
+        subset='validation')
+    mask_train_generator = train_datagen.flow_from_directory(
+        mask_path,
         classes=[mask_folder],
         class_mode=None,
         color_mode=mask_color_mode,
@@ -222,11 +146,29 @@ def train_data_generator(batch_size, train_path, image_folder, mask_folder, aug_
         batch_size=batch_size,
         save_to_dir=save_to_dir,
         save_prefix=mask_save_prefix,
-        seed=seed)
+        seed=seed,
+        subset='training')
+    mask_valid_generator = train_datagen.flow_from_directory(
+        mask_path,
+        classes=[mask_folder],
+        class_mode=None,
+        color_mode=mask_color_mode,
+        target_size=target_size,
+        batch_size=batch_size,
+        save_to_dir=save_to_dir,
+        save_prefix=mask_save_prefix,
+        seed=seed,
+        subset='validation')
+    return image_train_generator, mask_train_generator, image_valid_generator, mask_valid_generator
+
+
+def yield_generator(image_generator, mask_generator):
     train_generator = zip(image_generator, mask_generator)
     for (img, mask) in train_generator:
-        img, mask = adjust_data(img, mask, num_class)
-        yield img, mask
+        img, boundary, mask = adjust_data(img, mask, num_class)
+        print(img.shape, boundary.shape, mask.shape)
+        print(np.stack((img, boundary), axis=3).shape)
+        yield np.squeeze(np.stack((img, boundary), axis=3), axis=4), mask
 
 
 if __name__ == "__main__":
@@ -236,8 +178,19 @@ if __name__ == "__main__":
                          shear_range=0.05,
                          zoom_range=0.05,
                          horizontal_flip=True,
+                         validation_split=0.1,
                          fill_mode='nearest')
-    myGene = train_data_generator(2, './train_data', 'covers', 'masks', data_gen_args, image_color_mode="grayscale", mask_color_mode="rgb", save_to_dir=None)
-    model = Unet(4)
+    num_class = 2
+    title = [255, 0, 0]
+    author = [0, 255, 0]
+    abstract = [0, 0, 255]
+    other = [0, 0, 0]
+    color_map = np.array([other, abstract, title, author][:num_class])
+    generator = train_data_generator(1, './train_data', './train_data', 'covers', 'masks', data_gen_args, num_class, image_color_mode="grayscale",
+                                     mask_color_mode="rgb", save_to_dir=None)
+    train_generator = yield_generator(generator[0], generator[1])
+    valid_generator = yield_generator(generator[2], generator[3])
+    model = Unet(num_class)
+    # model.model.load_weights('/kaggle/working/unet_membrane_title.hdf5')
     model_checkpoint = ModelCheckpoint('unet_membrane.hdf5', monitor='loss', verbose=1, save_best_only=True)
-    model.fit(myGene, steps_per_epoch=2000, epochs=5, callbacks=[model_checkpoint])
+    history = model.model.fit(train_generator, validation_data=valid_generator, validation_steps=200, steps_per_epoch=2000, epochs=30, callbacks=[model_checkpoint])
