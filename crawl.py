@@ -1,9 +1,7 @@
 import requests
 import re
 import fitz
-from bs4 import BeautifulSoup
 from pathlib import Path
-import time
 import pandas as pd
 import json
 from multiprocessing.dummy import Pool as ThreadPool
@@ -11,8 +9,6 @@ import os
 
 temp_dir = Path("./tmp")
 temp_dir.mkdir(parents=True, exist_ok=True)
-covers_dir = Path("./tmp/temp")
-covers_dir.mkdir(parents=True, exist_ok=True)
 pdf_dir = Path("./tmp/pdf")
 pdf_dir.mkdir(parents=True, exist_ok=True)
 skip_dir = Path("./tmp/skip")
@@ -42,7 +38,7 @@ def form_dataframe():
         except ValueError:
             continue
         if all(list(map(lambda c: re.match(r'cs\..+', c), category))) \
-                and 1701 <= year:
+                and 1501 <= year:
             print(year, category)
             paper_dict['id'] = re.sub(r'\.', '_', str(paper_dict['id']))
             papers.append(paper_dict)
@@ -57,7 +53,6 @@ def form_dataframe():
 def crawl(id):
     if Path('{}/{}.pdf'.format(str(pdf_dir), id)).exists() or Path('{}/{}.txt'.format(str(skip_dir), id)).exists():
         return
-    time.sleep(1)
     id = re.sub('_', '.', id)
 
     def skip(msg, id):
@@ -67,20 +62,11 @@ def crawl(id):
 
     file_name = re.sub(r'\.', '_', str(id))
     try:
-        response = requests.get('https://export.arxiv.org/pdf/{}'.format(id), timeout=(2, 3))
-    except requests.exceptions.Timeout:
+        response = requests.get('https://export.arxiv.org/pdf/{}'.format(id), timeout=1)
+    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
         skip('timeout error', file_name)
         return
 
-    # document = BeautifulSoup(response.text, "html.parser")
-    # try:
-    #     if document.select_one('div#content > h1').text.startswith('PDF unavailable for'):
-    #         f = open('{}/{}.txt'.format(skip_dir, re.sub('\.', '_', id)), "x")
-    #         f.close()
-    #         print('skipping', id)
-    #         return
-    # except AttributeError:
-    #     pass
     with open('{}/paper_{}.pdf'.format(str(temp_dir), file_name), 'wb') as f:
         f.write(response.content)
         try:
@@ -101,9 +87,9 @@ if __name__ == '__main__':
     # df = pd.read_csv('./metadata.csv')
     # df = df[df['id'].str.match(r'\d{4}_\d{4,5}')]
     # print(len(df))
-    # df = df.sample(n=40000)
+    # df = df.sample(n=50000)
     # df.to_csv('./sampled_metadata_{}.csv'.format(int(time.time())))
-    df = pd.read_csv('./sampled_metadata_1606382293.csv')
+    df = pd.read_csv('./sampled_metadata_1606727935.csv')
 
     processes = 8
     chunk_size = int(len(df) / processes)
