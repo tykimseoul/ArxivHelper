@@ -178,7 +178,7 @@ if __name__ == "__main__":
                          shear_range=0.05,
                          zoom_range=0.05,
                          horizontal_flip=True,
-                         validation_split=0.1,
+                         validation_split=0.2,
                          fill_mode='nearest')
     num_class = 2
     title = [255, 0, 0]
@@ -186,11 +186,9 @@ if __name__ == "__main__":
     abstract = [0, 0, 255]
     other = [0, 0, 0]
     color_map = np.array([other, abstract, title, author][:num_class])
-    generator = train_data_generator(1, './train_data', './train_data', 'covers', 'masks', data_gen_args, num_class, image_color_mode="grayscale",
-                                     mask_color_mode="rgb", save_to_dir=None)
+    generator = train_data_generator(1, '/kaggle/input/dataset/train_unet', '/kaggle/input/dataset/masks_unet', 'train_unet', 'masks_unet', data_gen_args, num_class, image_color_mode="grayscale", mask_color_mode="rgb", save_to_dir=None)
     train_generator = yield_generator(generator[0], generator[1])
     valid_generator = yield_generator(generator[2], generator[3])
     model = Unet(num_class)
-    # model.model.load_weights('/kaggle/working/unet_membrane_title.hdf5')
-    model_checkpoint = ModelCheckpoint('unet_membrane.hdf5', monitor='loss', verbose=1, save_best_only=True)
-    history = model.model.fit(train_generator, validation_data=valid_generator, validation_steps=200, steps_per_epoch=2000, epochs=30, callbacks=[model_checkpoint])
+    model_checkpoint = ModelCheckpoint('/kaggle/working/unet_membrane_title.hdf5', monitor='loss', verbose=1, save_best_only=True)
+    history = model.model.fit(train_generator, validation_data=valid_generator, validation_steps=2000, steps_per_epoch=2000, epochs=20, callbacks=[model_checkpoint])
