@@ -1,3 +1,4 @@
+import time
 import requests
 import re
 import fitz
@@ -62,7 +63,7 @@ def crawl(id):
 
     file_name = re.sub(r'\.', '_', str(id))
     try:
-        response = requests.get('https://export.arxiv.org/pdf/{}'.format(id), timeout=1)
+        response = requests.get('https://export.arxiv.org/pdf/{}'.format(id), timeout=1.5)
     except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
         skip('timeout error', file_name)
         return
@@ -82,14 +83,18 @@ def crawl(id):
             return
 
 
+def sample_data(size):
+    df = pd.read_csv('./metadata.csv')
+    df = df[df['id'].str.match(r'\d{4}_\d{4,5}')]
+    print(len(df))
+    df = df.sample(n=size)
+    df.to_csv('./sampled_metadata_{}.csv'.format(int(time.time())))
+
+
 if __name__ == '__main__':
     # form_dataframe()
-    # df = pd.read_csv('./metadata.csv')
-    # df = df[df['id'].str.match(r'\d{4}_\d{4,5}')]
-    # print(len(df))
-    # df = df.sample(n=50000)
-    # df.to_csv('./sampled_metadata_{}.csv'.format(int(time.time())))
-    df = pd.read_csv('./sampled_metadata_1606727935.csv')
+    # sample_data(20000)
+    df = pd.read_csv('./sampled_metadata_1606960139.csv')
 
     processes = 8
     chunk_size = int(len(df) / processes)
