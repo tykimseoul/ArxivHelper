@@ -5,6 +5,7 @@ import os
 import json
 import matplotlib.pyplot as plt
 import numpy as np
+from pdfminer.psparser import PSSyntaxError
 from PIL import Image
 import re
 from pdfminer.layout import LAParams, LTTextBox, LTTextLine
@@ -14,12 +15,24 @@ from pdfminer.pdfinterp import PDFPageInterpreter
 from pdfminer.converter import PDFPageAggregator
 import jellyfish
 import fitz
-from multiprocessing import cpu_count
-from multiprocessing.dummy import Pool as ThreadPool
+from multiprocessing import Pool, current_process
 
 pd.set_option('display.max_columns', 500)
 pd.set_option('display.width', 1000)
 pd.set_option('max_colwidth', 100)
+
+train_dir = Path("./train_data/train_unet")
+shutil.rmtree(train_dir)
+train_dir.mkdir(parents=True, exist_ok=True)
+mask_dir = Path('./train_data/masks_unet')
+shutil.rmtree(mask_dir)
+mask_dir.mkdir(parents=True, exist_ok=True)
+covers_dir = Path('./tmp/thumbnail')
+covers_dir.mkdir(parents=True, exist_ok=True)
+temp_mask_dir = Path('./tmp/masks')
+temp_mask_dir.mkdir(parents=True, exist_ok=True)
+pdf_dir = Path("./tmp/pdf")
+pdf_dir.mkdir(parents=True, exist_ok=True)
 
 
 class TextArea:
@@ -35,7 +48,7 @@ class TextArea:
 
 
 def dejson_dataframe(df):
-    print('dejsoning')
+    print(current_process().name, len(df), 'dejsoning')
 
     def unwrap_columns(df, key):
         parsed = df[key].map(str).apply(json.loads).apply(pd.Series)
@@ -54,92 +67,97 @@ def dejson_dataframe(df):
     df['redaction_area'] = redaction
     df = unwrap_columns(df, 'title_bbox')
     df = unwrap_columns(df, 'abstract_bbox')
-    # df['redaction_area'].hist(bins=1000)
-    # plt.show()
-    print(df.head(10))
+    df.drop(['redaction_bbox', 'title_bbox', 'authors_bbox', 'abstract_bbox'], axis=1, inplace=True)
     return df
 
 
 def filter_dataframe(df):
-    print('filtering')
-    df.drop(['redaction_bbox', 'title_bbox', 'authors_bbox', 'abstract_bbox'], axis=1, inplace=True)
-    df.drop(df[df['width'] != 612].index, inplace=True)
-    df.drop(df[df['height'] != 792].index, inplace=True)
-    df.drop(df[df['abstract_bbox_area'] > 250000].index, inplace=True)
-    df.drop(df[df['abstract_bbox_area'] < 10000].index, inplace=True)
-    df.drop(df[df['title_bbox_area'] > 50000].index, inplace=True)
-    df.drop(df[df['title_bbox_area'] < 1000].index, inplace=True)
-    df.drop(df[df['redaction_area'] < 40000].index, inplace=True)
-    df.drop(df[df['redaction_area'] > 350000].index, inplace=True)
-    df.drop(df[df['abstract_bbox_3'] > df['title_bbox_1']].index, inplace=True)
-    # plt.figure()
-    # df['title_bbox_area'].hist(bins=100)
-    # plt.show()
-    # plt.figure()
-    # df['abstract_bbox_area'].hist(bins=100)
-    # plt.show()
-    df.reset_index(drop=True, inplace=True)
-    return df
+    print(current_process().name, len(df), 'filtering')
+    filtered = df
+    filtered.reset_index(drop=True, inplace=True)
+    filtered = filtered.drop(filtered[filtered['width'] != 612].index)
+    filtered = filtered.drop(filtered[filtered['height'] != 792].index)
+    filtered = filtered.drop(filtered[filtered['abstract_bbox_area'] > 250000].index)
+    filtered = filtered.drop(filtered[filtered['abstract_bbox_area'] < 20000].index)
+    filtered = filtered.drop(filtered[filtered['title_bbox_area'] > 50000].index)
+    filtered = filtered.drop(filtered[filtered['title_bbox_area'] < 1000].index)
+    filtered = filtered.drop(filtered[filtered['redaction_area'] < 40000].index)
+    filtered = filtered.drop(filtered[filtered['redaction_area'] > 350000].index)
+    filtered = filtered.drop(filtered[filtered['abstract_bbox_3'] > filtered['title_bbox_1']].index)
+    return filtered
 
 
-train_dir = Path("./train_data/train_unet")
-shutil.rmtree(train_dir)
-train_dir.mkdir(parents=True, exist_ok=True)
-area_dir = Path('./train_data/area')
-area_dir.mkdir(parents=True, exist_ok=True)
-mask_dir = Path('./train_data/masks_unet')
-shutil.rmtree(mask_dir)
-mask_dir.mkdir(parents=True, exist_ok=True)
-covers_dir = Path('./tmp/thumbnail')
-shutil.rmtree(covers_dir)
-covers_dir.mkdir(parents=True, exist_ok=True)
-pdf_dir = Path("./tmp/pdf")
-pdf_dir.mkdir(parents=True, exist_ok=True)
-
-
-def copy_thumbnail(file):
+def copy_image(file, dir, dest):
     try:
-        shutil.copy('{}/{}.png'.format(str(covers_dir), file), train_dir)
+        shutil.copy('{}/{}.png'.format(dir, file), dest)
     except FileNotFoundError:
         pass
 
 
 def make_mask(key, width, height, title_0, title_1, title_2, title_3, abstract_0, abstract_1, abstract_2, abstract_3):
-    img = np.zeros((height, width, 3), np.uint8)
-    img[height - int(title_3 * height): height - int(title_1 * height), int(title_0 * width):int(title_2 * width), :] = [255, 0, 0]
-    img[height - int(abstract_3 * height): height - int(abstract_1 * height), int(abstract_0 * width):int(abstract_2 * width), :] = [0, 0, 255]
-    img = Image.fromarray(img)
-    img.save('{}/{}.png'.format(mask_dir, key))
+    if not Path('{}/{}.png'.format(temp_mask_dir, key)).exists():
+        print('making mask', key)
+        img = np.zeros((height, width, 3), np.uint8)
+        img[height - int(title_3 * height): height - int(title_1 * height), int(title_0 * width):int(title_2 * width), :] = [255, 0, 0]
+        img[height - int(abstract_3 * height): height - int(abstract_1 * height), int(abstract_0 * width):int(abstract_2 * width), :] = [0, 0, 255]
+        img = Image.fromarray(img)
+        img.save('{}/{}.png'.format(temp_mask_dir, key))
 
 
 def parse(samples_df, pdfs):
-    rows = []
+    count = 0
     for pdf in pdfs:
-        print(pdf)
+        print(current_process().name, count, pdf)
         try:
-            doc = fitz.open('{}/{}'.format(str(pdf_dir), pdf), filetype="pdf")
-            pix = doc[0].getPixmap(alpha=False)
             id = re.sub(r'\.pdf$', '', pdf)
+            if Path('{}/{}.png'.format(covers_dir, id)).exists() and id in pd.read_csv('./tmp/metadata_{}.csv'.format(current_process().name), index_col=0)['file'].tolist():
+                print('skipping', id)
+                count += 1
+                continue
+            doc = fitz.open('{}/{}'.format(str(pdf_dir), pdf), filetype="pdf")
+            if doc.isDirty:
+                print(current_process().name, pdf, 'dirty')
+                count += 1
+                continue
+            pix = doc[0].getPixmap(alpha=False)
             save_thumbnail(id, pix)
             fp = open('{}/{}'.format(str(pdf_dir), pdf), 'rb')
             row = samples_df[samples_df['id'] == id].iloc[0]
             masks = mask_pdf(fp, row['title'], re.split(r',\s+', row['authors']), row['abstract'], pix)
             if masks is None:
+                print('mask none', pdf)
                 continue
-            parsed_row = parse_row(row['id'], pix, masks)
-            rows.append(parsed_row)
-        except RuntimeError:
+            save_row(row['id'], pix, masks, current_process().name)
+            count += 1
+        except (RuntimeError, ValueError):
+            print(current_process().name, pdf, 'runtime')
             continue
-    df = pd.DataFrame(rows)
+        except Exception as e:
+            print(current_process().name, 'new error', e, type(e))
+            continue
+    df = pd.read_csv('./tmp/metadata_{}.csv'.format(current_process().name), index_col=0)
     if len(df) == 0:
         return pd.DataFrame(columns=['file', 'width', 'height', 'title_bbox', 'authors_bbox', 'abstract_bbox', 'redaction_bbox'])
-    df.columns = ['file', 'width', 'height', 'title_bbox', 'authors_bbox', 'abstract_bbox', 'redaction_bbox']
     return df
 
 
 def save_thumbnail(key, pix):
-    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples).convert('L')
-    img.save('{}/{}.png'.format(covers_dir, key), 'PNG')
+    if not Path('{}/{}.png'.format(covers_dir, key)).exists():
+        print('saving thumbnail', key)
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples).convert('L')
+        img.save('{}/{}.png'.format(covers_dir, key), 'PNG')
+
+
+def save_row(file_name, pix, masks, thread):
+    try:
+        df = pd.read_csv('./tmp/metadata_{}.csv'.format(thread), index_col=0)
+    except FileNotFoundError:
+        df = pd.DataFrame(columns=['file', 'width', 'height', 'title_bbox', 'authors_bbox', 'abstract_bbox', 'redaction_bbox'])
+    if file_name not in df['file'].tolist():
+        print('saving row', file_name)
+        data = [file_name, pix.width, pix.height, json.dumps(masks[0]), json.dumps(masks[1]), json.dumps(masks[2]), json.dumps(masks[3])]
+        df = pd.concat([df, pd.DataFrame([data], columns=df.columns)])
+        df.to_csv('./tmp/metadata_{}.csv'.format(thread))
 
 
 def parse_row(file_name, pix, masks):
@@ -147,7 +165,10 @@ def parse_row(file_name, pix, masks):
 
 
 def mask_pdf(fp, title, authors, abstract, pix):
-    raw_boxes, text_boxes, text_lines = parse_layout(fp)
+    try:
+        raw_boxes, text_boxes, text_lines = parse_layout(fp)
+    except (TypeError, PSSyntaxError):
+        return None
     if len(raw_boxes) * len(text_boxes) * len(text_lines) == 0:
         return None
     title_boxes = list(filter(lambda b: b.bbox[1] > pix.height / 2, raw_boxes))
@@ -230,35 +251,41 @@ def parse_layout(fp):
 
 
 def form_dataset(pdfs):
-    samples_df = pd.read_csv('./sampled_metadata.csv')
-    df = parse(samples_df, pdfs)
-
+    df = parse(metadata, pdfs)
     df = dejson_dataframe(df)
-    df = filter_dataframe(df)
-    df.apply(lambda r: copy_thumbnail(r['file']), axis=1)
     df.apply(lambda r: make_mask(r['file'], r['width'], r['height'], r['title_bbox_0'], r['title_bbox_1'], r['title_bbox_2'], r['title_bbox_3'], r['abstract_bbox_0'], r['abstract_bbox_1'], r['abstract_bbox_2'], r['abstract_bbox_3']), axis=1)
     return df
 
 
-processes = cpu_count()
-pdfs = sorted(os.listdir(pdf_dir))[:20]
+processes = 4
+pdfs = sorted(os.listdir(pdf_dir))
 pdf_chunk_size = int(len(pdfs) / processes)
 pdf_chunks = [pdfs[i:i + pdf_chunk_size] for i in range(0, len(pdfs), pdf_chunk_size)]
 print(list(map(len, pdf_chunks)))
-assert sum(list(map(len, pdf_chunks))) == len(pdfs)
+pdfs = set(map(lambda p: re.sub(r'\.pdf$', '', p), pdfs))
 
 
 def apply_to_df(pdf_chunk):
-    pdf_chunk = form_dataset(pdf_chunk)
-    return pdf_chunk
+    df = form_dataset(pdf_chunk)
+    return df
 
 
+metadata = pd.read_csv('./metadata.csv')
+metadata = metadata[metadata['id'].isin(pdfs)]
+print(len(metadata))
 # Process dataframes
-with ThreadPool(processes) as p:
+with Pool(processes) as p:
     result = p.map(apply_to_df, pdf_chunks)
 
 # Concat all chunks
 df_reconstructed = pd.concat(result)
+df_reconstructed.drop_duplicates(subset=['file'], inplace=True)
 df_reconstructed.reset_index(drop=True, inplace=True)
 print('done', len(df_reconstructed))
-df_reconstructed.to_csv('./train_data/filtered_metadata.csv')
+df_reconstructed.to_csv('./train_data/dejsoned_metadata.csv')
+
+# faster without multiprocessing
+filtered_df = filter_dataframe(df_reconstructed)
+filtered_df.to_csv('./train_data/filtered_metadata.csv')
+filtered_df.apply(lambda r: copy_image(r['file'], covers_dir, train_dir), axis=1)
+filtered_df.apply(lambda r: copy_image(r['file'], temp_mask_dir, mask_dir), axis=1)
