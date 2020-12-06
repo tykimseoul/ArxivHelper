@@ -38,7 +38,7 @@ def focal_tversky_loss(y_true, y_pred, gamma=0.75):
 
 
 class Unet:
-    def __init__(self, num_class, input_size=(400, 400, 2)):
+    def __init__(self, num_class, input_size=(400, 400, 1)):
         self.base_model = None
         self.input_size = input_size
         self.num_class = num_class
