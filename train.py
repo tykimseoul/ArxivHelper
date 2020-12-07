@@ -3,6 +3,7 @@ from tensorflow.keras.layers import *
 from tensorflow.keras.optimizers import *
 from tensorflow.keras.callbacks import *
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.initializers import *
 import numpy as np
 from scipy import ndimage
 import tensorflow.keras.backend as K
@@ -38,78 +39,115 @@ def focal_tversky_loss(y_true, y_pred, gamma=0.75):
 
 
 class Unet:
-    def __init__(self, num_class, input_size=(400, 400, 1)):
+    def __init__(self, num_class, input_size=(512, 512, 1)):
         self.base_model = None
         self.input_size = input_size
         self.num_class = num_class
         self.model = self.build()
 
     def build(self):
+        def conv_block(inputs, filters, kernel_size, batch_normalization=True):
+            conv = Conv2D(filters, kernel_size, activation='relu', padding='same', kernel_initializer='he_normal')(inputs)
+            if batch_normalization:
+                conv = BatchNormalization()(conv)
+            conv = Conv2D(filters, kernel_size, activation='relu', padding='same', kernel_initializer='he_normal')(conv)
+            if batch_normalization:
+                conv = BatchNormalization()(conv)
+            return conv
+
         inputs = Input(self.input_size)
 
-        conv1 = Conv2D(32, 3, activation='relu', padding='same', kernel_initializer='he_normal')(inputs)
-        conv1 = BatchNormalization()(conv1)
-        conv1 = Conv2D(32, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv1)
-        conv1 = BatchNormalization()(conv1)
+        conv1 = conv_block(inputs, 32, 3)
         pool1 = MaxPooling2D(pool_size=(2, 2))(conv1)
 
-        conv2 = Conv2D(64, 3, activation='relu', padding='same', kernel_initializer='he_normal')(pool1)
-        conv2 = BatchNormalization()(conv2)
-        conv2 = Conv2D(64, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv2)
-        conv2 = BatchNormalization()(conv2)
+        conv2 = conv_block(pool1, 64, 3)
         pool2 = MaxPooling2D(pool_size=(2, 2))(conv2)
 
-        conv3 = Conv2D(128, 3, activation='relu', padding='same', kernel_initializer='he_normal')(pool2)
-        conv3 = BatchNormalization()(conv3)
-        conv3 = Conv2D(128, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv3)
-        conv3 = BatchNormalization()(conv3)
+        conv3 = conv_block(pool2, 128, 3)
         pool3 = MaxPooling2D(pool_size=(2, 2))(conv3)
 
-        conv4 = Conv2D(256, 3, activation='relu', padding='same', kernel_initializer='he_normal')(pool3)
-        conv4 = BatchNormalization()(conv4)
-        conv4 = Conv2D(256, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv4)
-        conv4 = BatchNormalization()(conv4)
-        pool4 = MaxPooling2D(pool_size=(2, 2))(conv4)
+        conv4 = conv_block(pool3, 256, 3)
 
-        conv5 = Conv2D(512, 3, activation='relu', padding='same', kernel_initializer='he_normal')(pool4)
-        conv5 = BatchNormalization()(conv5)
-        conv5 = Conv2D(512, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv5)
-        conv5 = BatchNormalization()(conv5)
+        def title_branch(input):
+            crop1 = Cropping2D(cropping=((0, int(input.shape[1] * 0.5)), (0, 0)))(input)
+            pool4 = MaxPooling2D(pool_size=(2, 2))(crop1)
+            conv5 = conv_block(pool4, 512, 3)
 
-        up6 = Conv2D(256, 2, activation='relu', padding='same', kernel_initializer='he_normal')(UpSampling2D(size=(2, 2))(conv5))
-        merge6 = concatenate([conv4, up6], axis=3)
-        conv6 = Conv2D(256, 3, activation='relu', padding='same', kernel_initializer='he_normal')(merge6)
-        conv6 = BatchNormalization()(conv6)
-        conv6 = Conv2D(256, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv6)
-        conv6 = BatchNormalization()(conv6)
+            up6 = Conv2D(256, 2, activation='relu', padding='same', kernel_initializer='he_normal')(UpSampling2D(size=(2, 2))(conv5))
+            merge6 = Concatenate()([Cropping2D(cropping=((0, int(conv4.shape[1] * 0.5)), (0, 0)))(conv4), up6])
+            conv6 = conv_block(merge6, 256, 3)
 
-        up7 = Conv2D(128, 2, activation='relu', padding='same', kernel_initializer='he_normal')(UpSampling2D(size=(2, 2))(conv6))
-        merge7 = concatenate([conv3, up7], axis=3)
-        conv7 = Conv2D(128, 3, activation='relu', padding='same', kernel_initializer='he_normal')(merge7)
-        conv7 = BatchNormalization()(conv7)
-        conv7 = Conv2D(128, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv7)
-        conv7 = BatchNormalization()(conv7)
+            up7 = Conv2D(128, 2, activation='relu', padding='same', kernel_initializer='he_normal')(UpSampling2D(size=(2, 2))(conv6))
+            merge7 = Concatenate()([Cropping2D(cropping=((0, int(conv3.shape[1] * 0.5)), (0, 0)))(conv3), up7])
+            conv7 = conv_block(merge7, 128, 3)
 
-        up8 = Conv2D(64, 2, activation='relu', padding='same', kernel_initializer='he_normal')(UpSampling2D(size=(2, 2))(conv7))
-        merge8 = concatenate([conv2, up8], axis=3)
-        conv8 = Conv2D(64, 3, activation='relu', padding='same', kernel_initializer='he_normal')(merge8)
-        conv8 = BatchNormalization()(conv8)
-        conv8 = Conv2D(64, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv8)
-        conv8 = BatchNormalization()(conv8)
+            up8 = Conv2D(64, 2, activation='relu', padding='same', kernel_initializer='he_normal')(UpSampling2D(size=(2, 2))(conv7))
+            merge8 = Concatenate()([Cropping2D(cropping=((0, int(conv2.shape[1] * 0.5)), (0, 0)))(conv2), up8])
+            conv8 = conv_block(merge8, 64, 3)
 
-        up9 = Conv2D(32, 2, activation='relu', padding='same', kernel_initializer='he_normal')(UpSampling2D(size=(2, 2))(conv8))
-        merge9 = concatenate([conv1, up9], axis=3)
-        conv9 = Conv2D(32, 3, activation='relu', padding='same', kernel_initializer='he_normal')(merge9)
-        conv9 = BatchNormalization()(conv9)
-        conv9 = Conv2D(32, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv9)
-        conv9 = BatchNormalization()(conv9)
-        conv9 = Conv2D(self.num_class, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv9)
-        conv9 = BatchNormalization()(conv9)
-        conv10 = Conv2D(self.num_class, 1, activation='softmax')(conv9)
+            up9 = Conv2D(32, 2, activation='relu', padding='same', kernel_initializer='he_normal')(UpSampling2D(size=(2, 2))(conv8))
+            merge9 = Concatenate()([Cropping2D(cropping=((0, int(conv1.shape[1] * 0.5)), (0, 0)))(conv1), up9])
+            conv9 = conv_block(merge9, 32, 3)
 
-        model = Model(inputs, conv10)
+            conv9 = Conv2D(2, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv9)
+            conv9 = BatchNormalization()(conv9)
+            conv10 = Conv2D(2, 1, activation='softmax')(conv9)
 
-        model.compile(optimizer=Adam(lr=1e-4), loss=focal_tversky_loss, metrics=[tversky,  'accuracy'])
+            return conv10
+
+        def abstract_branch(input):
+            pool4 = MaxPooling2D(pool_size=(2, 2))(input)
+
+            conv5 = conv_block(pool4, 512, 3)
+
+            up6 = Conv2D(256, 2, activation='relu', padding='same', kernel_initializer='he_normal')(UpSampling2D(size=(2, 2))(conv5))
+            merge6 = Concatenate()([conv4, up6])
+            conv6 = conv_block(merge6, 256, 3)
+
+            up7 = Conv2D(128, 2, activation='relu', padding='same', kernel_initializer='he_normal')(UpSampling2D(size=(2, 2))(conv6))
+            merge7 = Concatenate()([conv3, up7])
+            conv7 = conv_block(merge7, 128, 3)
+
+            up8 = Conv2D(64, 2, activation='relu', padding='same', kernel_initializer='he_normal')(UpSampling2D(size=(2, 2))(conv7))
+            merge8 = Concatenate()([conv2, up8])
+            conv8 = conv_block(merge8, 64, 3)
+
+            up9 = Conv2D(32, 2, activation='relu', padding='same', kernel_initializer='he_normal')(UpSampling2D(size=(2, 2))(conv8))
+            merge9 = Concatenate()([conv1, up9])
+            conv9 = conv_block(merge9, 32, 3)
+
+            conv9 = Conv2D(2, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv9)
+            conv9 = BatchNormalization()(conv9)
+            conv10 = Conv2D(2, 1, activation='softmax')(conv9)
+
+            return conv10
+
+        title_block = title_branch(conv4)
+        abstract_block = abstract_branch(conv4)
+
+        def extract_channels(input):
+            input = K.expand_dims(input, axis=-1)
+            first = Cropping3D(cropping=((0, 0), (0, 0), (0, 1)))(input)
+            second = Cropping3D(cropping=((0, 0), (0, 0), (1, 0)))(input)
+            first = K.squeeze(first, axis=-1)
+            second = K.squeeze(second, axis=-1)
+            return first, second
+
+        title_channel, title_other_channel = extract_channels(title_block)
+        title_channel = ZeroPadding2D(padding=((0, title_channel.shape[1]), (0, 0)))(title_channel)
+        title_other_channel = Concatenate(axis=1)([title_other_channel, Ones()(shape=(batch_size,) + title_other_channel.shape[1:])])
+
+        abstract_other_channel, abstract_channel = extract_channels(abstract_block)
+
+        other_channel = Multiply()([title_other_channel, abstract_other_channel])
+
+        output = Concatenate()([title_channel, other_channel, abstract_channel])
+
+        assert output.shape[3] == self.num_class
+
+        model = Model(inputs, output)
+
+        model.compile(optimizer=Adam(lr=1e-4), loss=focal_tversky_loss, metrics=[tversky, 'accuracy'])
 
         model.summary()
 
@@ -158,7 +196,7 @@ def adjust_data(img, mask, num_class):
 
 def train_data_generator(batch_size, image_path, mask_path, image_folder, mask_folder, aug_dict, num_class, image_color_mode="grayscale",
                          mask_color_mode="rgb", image_save_prefix="image", mask_save_prefix="mask",
-                         save_to_dir=None, target_size=(400, 400), seed=1):
+                         save_to_dir=None, target_size=(512, 512), seed=1):
     """
     can generate image and mask at the same time
     use the same seed for image_datagen and mask_datagen to ensure the transformation for image and mask is the same
@@ -230,15 +268,15 @@ if __name__ == "__main__":
                          horizontal_flip=True,
                          validation_split=0.2,
                          fill_mode='nearest')
-    num_class = 2
+    batch_size = 1
+    num_class = 3
     title = [255, 0, 0]
-    author = [0, 255, 0]
     abstract = [0, 0, 255]
     other = [0, 0, 0]
-    color_map = np.array([other, abstract, title, author][:num_class])
-    generator = train_data_generator(1, '/kaggle/input/dataset/train_unet', '/kaggle/input/dataset/masks_unet', 'train_unet', 'masks_unet', data_gen_args, num_class, image_color_mode="grayscale", mask_color_mode="rgb", save_to_dir=None)
+    color_map = np.array([title, other, abstract][:num_class])
+    generator = train_data_generator(batch_size, '/kaggle/input/dataset/train_unet', '/kaggle/input/dataset/masks_unet', 'train_unet', 'masks_unet', data_gen_args, num_class, image_color_mode="grayscale", mask_color_mode="rgb", save_to_dir=None)
     train_generator = yield_generator(generator[0], generator[1])
     valid_generator = yield_generator(generator[2], generator[3])
     model = Unet(num_class)
     model_checkpoint = ModelCheckpoint('/kaggle/working/unet_membrane_title.hdf5', monitor='loss', verbose=1, save_best_only=True)
-    history = model.model.fit(train_generator, validation_data=valid_generator, validation_steps=2000, steps_per_epoch=2000, epochs=20, callbacks=[model_checkpoint])
+    history = model.model.fit(train_generator, validation_data=valid_generator, validation_steps=200, steps_per_epoch=2000, epochs=20, callbacks=[model_checkpoint])
