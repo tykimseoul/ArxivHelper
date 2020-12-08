@@ -3,6 +3,7 @@ from tensorflow.keras.layers import *
 from tensorflow.keras.optimizers import *
 from tensorflow.keras.initializers import *
 import tensorflow.keras.backend as K
+from tensorflow.keras.regularizers import l2
 
 
 def dice_coef(y_true, y_pred, smooth=1):
@@ -35,11 +36,12 @@ def focal_tversky_loss(y_true, y_pred, gamma=0.75):
 
 
 class Unet:
-    def __init__(self, num_class, input_size=(512, 512, 1), batch_size=1):
+    def __init__(self, num_class, input_size=(512, 512, 1), batch_size=1, deep_supervision=False):
         self.base_model = None
         self.input_size = input_size
         self.num_class = num_class
         self.batch_size = batch_size
+        self.deep_supervision = deep_supervision
         self.model = self.build()
 
     def build(self):
@@ -58,97 +60,73 @@ class Unet:
 
         inputs = Input(self.input_size)
 
-        conv1 = conv_block(inputs, 32, 3)
-        pool1 = MaxPooling2D(pool_size=(2, 2))(conv1)
+        conv0_0 = conv_block(inputs, 32, 3)
+        pool0 = MaxPooling2D(pool_size=(2, 2))(conv0_0)
 
-        conv2 = conv_block(pool1, 64, 3)
-        pool2 = MaxPooling2D(pool_size=(2, 2))(conv2)
+        conv1_0 = conv_block(pool0, 64, 3)
+        pool1 = MaxPooling2D(pool_size=(2, 2))(conv1_0)
 
-        conv3 = conv_block(pool2, 128, 3)
-        pool3 = MaxPooling2D(pool_size=(2, 2))(conv3)
+        conv2_0 = conv_block(pool1, 128, 3)
+        pool2 = MaxPooling2D(pool_size=(2, 2))(conv2_0)
 
-        conv4 = conv_block(pool3, 256, 3)
+        conv3_0 = conv_block(pool2, 256, 3)
+        pool3 = MaxPooling2D(pool_size=(2, 2))(conv3_0)
 
-        def title_branch(input):
-            crop1 = Cropping2D(cropping=((0, int(input.shape[1] * 0.5)), (0, 0)))(input)
-            pool4 = MaxPooling2D(pool_size=(2, 2))(crop1)
-            conv5 = conv_block(pool4, 512, 3)
+        conv4_0 = conv_block(pool3, 512, 3)
 
-            up6 = Conv2D(256, 2, activation='relu', padding='same', kernel_initializer='he_normal')(UpSampling2D(size=(2, 2))(conv5))
-            merge6 = Concatenate()([Cropping2D(cropping=((0, int(conv4.shape[1] * 0.5)), (0, 0)))(conv4), up6])
-            conv6 = conv_block(merge6, 256, 3)
+        up0_1 = Conv2DTranspose(32, 2, strides=(2, 2), activation='relu', padding='same', kernel_initializer='he_normal')(conv1_0)
+        conv0_1 = Concatenate()([up0_1, conv0_0])
+        conv0_1 = conv_block(conv0_1, 32, 3)
 
-            up7 = Conv2D(128, 2, activation='relu', padding='same', kernel_initializer='he_normal')(UpSampling2D(size=(2, 2))(conv6))
-            merge7 = Concatenate()([Cropping2D(cropping=((0, int(conv3.shape[1] * 0.5)), (0, 0)))(conv3), up7])
-            conv7 = conv_block(merge7, 128, 3)
+        up1_1 = Conv2DTranspose(64, 2, strides=(2, 2), activation='relu', padding='same', kernel_initializer='he_normal')(conv2_0)
+        conv1_1 = Concatenate()([up1_1, conv1_0])
+        conv1_1 = conv_block(conv1_1, 64, 3)
 
-            up8 = Conv2D(64, 2, activation='relu', padding='same', kernel_initializer='he_normal')(UpSampling2D(size=(2, 2))(conv7))
-            merge8 = Concatenate()([Cropping2D(cropping=((0, int(conv2.shape[1] * 0.5)), (0, 0)))(conv2), up8])
-            conv8 = conv_block(merge8, 64, 3)
+        up2_1 = Conv2DTranspose(128, 2, strides=(2, 2), activation='relu', padding='same', kernel_initializer='he_normal')(conv3_0)
+        conv2_1 = Concatenate()([up2_1, conv2_0])
+        conv2_1 = conv_block(conv2_1, 128, 3)
 
-            up9 = Conv2D(32, 2, activation='relu', padding='same', kernel_initializer='he_normal')(UpSampling2D(size=(2, 2))(conv8))
-            merge9 = Concatenate()([Cropping2D(cropping=((0, int(conv1.shape[1] * 0.5)), (0, 0)))(conv1), up9])
-            conv9 = conv_block(merge9, 32, 3)
+        up3_1 = Conv2DTranspose(256, 2, strides=(2, 2), activation='relu', padding='same', kernel_initializer='he_normal')(conv4_0)
+        conv3_1 = Concatenate()([up3_1, conv3_0])
+        conv3_1 = conv_block(conv3_1, 256, 3)
 
-            conv9 = Conv2D(2, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv9)
-            conv9 = BatchNormalization()(conv9)
-            conv10 = Conv2D(2, 1, activation='softmax')(conv9)
+        up0_2 = Conv2DTranspose(32, 2, strides=(2, 2), activation='relu', padding='same', kernel_initializer='he_normal')(conv1_1)
+        conv0_2 = Concatenate()([up0_2, conv0_0, conv0_1])
+        conv0_2 = conv_block(conv0_2, 32, 3)
 
-            return conv10
+        up1_2 = Conv2DTranspose(64, 2, strides=(2, 2), activation='relu', padding='same', kernel_initializer='he_normal')(conv2_1)
+        conv1_2 = Concatenate()([up1_2, conv1_0, conv1_1])
+        conv1_2 = conv_block(conv1_2, 64, 3)
 
-        def abstract_branch(input):
-            pool4 = MaxPooling2D(pool_size=(2, 2))(input)
+        up2_2 = Conv2DTranspose(128, 2, strides=(2, 2), activation='relu', padding='same', kernel_initializer='he_normal')(conv3_1)
+        conv2_2 = Concatenate()([up2_2, conv2_0, conv2_1])
+        conv2_2 = conv_block(conv2_2, 128, 3)
 
-            conv5 = conv_block(pool4, 512, 3)
+        up0_3 = Conv2DTranspose(32, 2, strides=(2, 2), activation='relu', padding='same', kernel_initializer='he_normal')(conv1_2)
+        conv0_3 = Concatenate()([up0_3, conv0_0, conv0_1, conv0_2])
+        conv0_3 = conv_block(conv0_3, 32, 3)
 
-            up6 = Conv2D(256, 2, activation='relu', padding='same', kernel_initializer='he_normal')(UpSampling2D(size=(2, 2))(conv5))
-            merge6 = Concatenate()([conv4, up6])
-            conv6 = conv_block(merge6, 256, 3)
+        up1_3 = Conv2DTranspose(64, 2, strides=(2, 2), activation='relu', padding='same', kernel_initializer='he_normal')(conv2_2)
+        conv1_3 = Concatenate()([up1_3, conv1_0, conv1_1, conv1_2])
+        conv1_3 = conv_block(conv1_3, 64, 3)
 
-            up7 = Conv2D(128, 2, activation='relu', padding='same', kernel_initializer='he_normal')(UpSampling2D(size=(2, 2))(conv6))
-            merge7 = Concatenate()([conv3, up7])
-            conv7 = conv_block(merge7, 128, 3)
+        up0_4 = Conv2DTranspose(32, 2, strides=(2, 2), activation='relu', padding='same', kernel_initializer='he_normal')(conv1_3)
+        conv0_4 = Concatenate()([up0_4, conv0_0, conv0_1, conv0_2, conv0_3])
+        conv0_4 = conv_block(conv0_4, 32, 3)
 
-            up8 = Conv2D(64, 2, activation='relu', padding='same', kernel_initializer='he_normal')(UpSampling2D(size=(2, 2))(conv7))
-            merge8 = Concatenate()([conv2, up8])
-            conv8 = conv_block(merge8, 64, 3)
+        nestnet_output_1 = Conv2D(self.num_class, (1, 1), activation='sigmoid', name='output_1', kernel_initializer='he_normal', padding='same', kernel_regularizer=l2(1e-4))(conv0_1)
+        nestnet_output_2 = Conv2D(self.num_class, (1, 1), activation='sigmoid', name='output_2', kernel_initializer='he_normal', padding='same', kernel_regularizer=l2(1e-4))(conv0_2)
+        nestnet_output_3 = Conv2D(self.num_class, (1, 1), activation='sigmoid', name='output_3', kernel_initializer='he_normal', padding='same', kernel_regularizer=l2(1e-4))(conv0_3)
+        nestnet_output_4 = Conv2D(self.num_class, (1, 1), activation='sigmoid', name='output_4', kernel_initializer='he_normal', padding='same', kernel_regularizer=l2(1e-4))(conv0_4)
 
-            up9 = Conv2D(32, 2, activation='relu', padding='same', kernel_initializer='he_normal')(UpSampling2D(size=(2, 2))(conv8))
-            merge9 = Concatenate()([conv1, up9])
-            conv9 = conv_block(merge9, 32, 3)
-
-            conv9 = Conv2D(2, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv9)
-            conv9 = BatchNormalization()(conv9)
-            conv10 = Conv2D(2, 1, activation='softmax')(conv9)
-
-            return conv10
-
-        title_block = title_branch(conv4)
-        abstract_block = abstract_branch(conv4)
-
-        def extract_channels(input):
-            input = K.expand_dims(input, axis=-1)
-            first = Cropping3D(cropping=((0, 0), (0, 0), (0, 1)))(input)
-            second = Cropping3D(cropping=((0, 0), (0, 0), (1, 0)))(input)
-            first = K.squeeze(first, axis=-1)
-            second = K.squeeze(second, axis=-1)
-            return first, second
-
-        title_channel, title_other_channel = extract_channels(title_block)
-        title_channel = ZeroPadding2D(padding=((0, title_channel.shape[1]), (0, 0)))(title_channel)
-        title_other_channel = Concatenate(axis=1)([title_other_channel, Ones()(shape=(self.batch_size,) + title_other_channel.shape[1:])])
-
-        abstract_other_channel, abstract_channel = extract_channels(abstract_block)
-
-        other_channel = Multiply()([title_other_channel, abstract_other_channel])
-
-        output = Concatenate()([title_channel, other_channel, abstract_channel])
-
-        assert output.shape[3] == self.num_class
+        if self.deep_supervision:
+            output = [nestnet_output_1, nestnet_output_2, nestnet_output_3, nestnet_output_4]
+        else:
+            output = nestnet_output_4
 
         model = Model(inputs, output)
 
-        model.compile(optimizer=Adam(lr=1e-4), loss=focal_tversky_loss, metrics=[tversky, 'accuracy'])
+        model.compile(optimizer=Adam(lr=1e-4), loss=focal_tversky_loss, metrics=[tversky])
 
         model.summary()
 
