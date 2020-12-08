@@ -39,20 +39,25 @@ def focal_tversky_loss(y_true, y_pred, gamma=0.75):
 
 
 class Unet:
-    def __init__(self, num_class, input_size=(512, 512, 1)):
+    def __init__(self, num_class, input_size=(512, 512, 1), batch_size=1):
         self.base_model = None
         self.input_size = input_size
         self.num_class = num_class
+        self.batch_size = batch_size
         self.model = self.build()
 
     def build(self):
-        def conv_block(inputs, filters, kernel_size, batch_normalization=True):
+        def conv_block(inputs, filters, kernel_size, batch_normalization=True, residual=True):
             conv = Conv2D(filters, kernel_size, activation='relu', padding='same', kernel_initializer='he_normal')(inputs)
             if batch_normalization:
                 conv = BatchNormalization()(conv)
             conv = Conv2D(filters, kernel_size, activation='relu', padding='same', kernel_initializer='he_normal')(conv)
             if batch_normalization:
                 conv = BatchNormalization()(conv)
+            if residual:
+                shortcut = Conv2D(filters, 1, activation='relu', padding='same', kernel_initializer='he_normal')(inputs)
+                shortcut = BatchNormalization()(shortcut)
+                conv = Add()([shortcut, conv])
             return conv
 
         inputs = Input(self.input_size)
@@ -135,7 +140,7 @@ class Unet:
 
         title_channel, title_other_channel = extract_channels(title_block)
         title_channel = ZeroPadding2D(padding=((0, title_channel.shape[1]), (0, 0)))(title_channel)
-        title_other_channel = Concatenate(axis=1)([title_other_channel, Ones()(shape=(batch_size,) + title_other_channel.shape[1:])])
+        title_other_channel = Concatenate(axis=1)([title_other_channel, Ones()(shape=(self.batch_size,) + title_other_channel.shape[1:])])
 
         abstract_other_channel, abstract_channel = extract_channels(abstract_block)
 
@@ -194,7 +199,7 @@ def adjust_data(img, mask, num_class):
     return img, boundary, mask
 
 
-def train_data_generator(batch_size, image_path, mask_path, image_folder, mask_folder, aug_dict, num_class, image_color_mode="grayscale",
+def train_data_generator(batch_size, image_path, mask_path, image_folder, mask_folder, aug_dict, image_color_mode="grayscale",
                          mask_color_mode="rgb", image_save_prefix="image", mask_save_prefix="mask",
                          save_to_dir=None, target_size=(512, 512), seed=1):
     """
@@ -268,15 +273,14 @@ if __name__ == "__main__":
                          horizontal_flip=True,
                          validation_split=0.2,
                          fill_mode='nearest')
-    batch_size = 1
     num_class = 3
     title = [255, 0, 0]
     abstract = [0, 0, 255]
     other = [0, 0, 0]
     color_map = np.array([title, other, abstract][:num_class])
-    generator = train_data_generator(batch_size, '/kaggle/input/dataset/train_unet', '/kaggle/input/dataset/masks_unet', 'train_unet', 'masks_unet', data_gen_args, num_class, image_color_mode="grayscale", mask_color_mode="rgb", save_to_dir=None)
+    generator = train_data_generator(1, '/kaggle/input/dataset/train_unet', '/kaggle/input/dataset/masks_unet', 'train_unet', 'masks_unet', data_gen_args, image_color_mode="grayscale", mask_color_mode="rgb", save_to_dir=None)
     train_generator = yield_generator(generator[0], generator[1])
     valid_generator = yield_generator(generator[2], generator[3])
     model = Unet(num_class)
     model_checkpoint = ModelCheckpoint('/kaggle/working/unet_membrane_title.hdf5', monitor='loss', verbose=1, save_best_only=True)
-    history = model.model.fit(train_generator, validation_data=valid_generator, validation_steps=200, steps_per_epoch=2000, epochs=20, callbacks=[model_checkpoint])
+    # history = model.model.fit(train_generator, validation_data=valid_generator, validation_steps=200, steps_per_epoch=2000, epochs=20, callbacks=[model_checkpoint])

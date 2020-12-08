@@ -4,7 +4,7 @@ from train import *
 from PIL import Image
 
 
-def test_generator(test_path, target_size=(400, 400)):
+def test_generator(test_path, target_size=(512, 512)):
     def delineate(img):
         def sigmoid(x, c):
             return 1 / (1 + np.exp(-c * x))
@@ -71,9 +71,9 @@ def save_result(npyfile):
 
 if __name__ == "__main__":
     testGene = test_generator('./test_data/')
-    num_class = 2
+    num_class = 3
     model = Unet(num_class)
     color_map = np.eye(num_class)
-    model.model.load_weights('./unet_membrane_title_no_boundary_batchnorm.hdf5')
+    model.model.load_weights('./unet_membrane_residual.hdf5')
     results = model.model.predict(testGene, verbose=1)
     save_result(results)
