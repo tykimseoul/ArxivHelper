@@ -33,6 +33,10 @@ temp_mask_dir = Path('./tmp/masks')
 temp_mask_dir.mkdir(parents=True, exist_ok=True)
 pdf_dir = Path("./tmp/pdf")
 pdf_dir.mkdir(parents=True, exist_ok=True)
+temp_redaction_dir = Path("./tmp/redaction")
+temp_redaction_dir.mkdir(parents=True, exist_ok=True)
+redaction_dir = Path("./train_data/redaction")
+redaction_dir.mkdir(parents=True, exist_ok=True)
 
 
 class TextArea:
@@ -104,13 +108,24 @@ def make_mask(key, width, height, title_0, title_1, title_2, title_3, abstract_0
         img.save('{}/{}.png'.format(temp_mask_dir, key))
 
 
+def save_redaction(key, pix, masks):
+    if not Path('{}/{}.png'.format(temp_redaction_dir, key)).exists():
+        print('redacting', key)
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples).convert('L')
+        img = np.array(img)
+        for bbox in masks[3]:
+            img[pix.height - int(bbox[3]):pix.height - int(bbox[1]), int(bbox[0]):int(bbox[2])] = 0
+        mask = Image.fromarray(img)
+        mask.save('{}/{}.png'.format(str(temp_redaction_dir), key), 'PNG')
+
+
 def parse(samples_df, pdfs):
     count = 0
     for pdf in pdfs:
         print(current_process().name, count, pdf)
         try:
             id = re.sub(r'\.pdf$', '', pdf)
-            if Path('{}/{}.png'.format(covers_dir, id)).exists() and id in pd.read_csv('./tmp/metadata_{}.csv'.format(current_process().name), index_col=0)['file'].tolist():
+            if Path('{}/{}.png'.format(covers_dir, id)).exists() and Path('{}/{}.png'.format(temp_redaction_dir, id)).exists() and id in pd.read_csv('./tmp/metadata_{}.csv'.format(current_process().name), index_col=0)['file'].tolist():
                 print('skipping', id)
                 count += 1
                 continue
@@ -127,6 +142,7 @@ def parse(samples_df, pdfs):
             if masks is None:
                 print('mask none', pdf)
                 continue
+            save_redaction(id, pix, masks)
             save_row(row['id'], pix, masks, current_process().name)
             count += 1
         except (RuntimeError, ValueError):
@@ -289,3 +305,4 @@ filtered_df = filter_dataframe(df_reconstructed)
 filtered_df.to_csv('./train_data/filtered_metadata.csv')
 filtered_df.apply(lambda r: copy_image(r['file'], covers_dir, train_dir), axis=1)
 filtered_df.apply(lambda r: copy_image(r['file'], temp_mask_dir, mask_dir), axis=1)
+filtered_df.apply(lambda r: copy_image(r['file'], temp_redaction_dir, redaction_dir), axis=1)
