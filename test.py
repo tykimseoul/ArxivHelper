@@ -49,31 +49,30 @@ def label_visualize(img):
     reshaped_img = np.reshape(img, [img.shape[0] * img.shape[1], img.shape[2]])
     maxed_img = np.zeros_like(reshaped_img)
     maxed_img[np.arange(len(reshaped_img)), reshaped_img.argmax(axis=1)] = 1
-    print(np.unique(maxed_img, axis=0, return_counts=True))
     img_out = np.zeros(maxed_img.shape[:1] + (3,))
     for i, color in enumerate(color_map):
-        print(i, np.where(np.all(maxed_img == color, axis=-1)))
         img_out[np.where(np.all(maxed_img == color, axis=-1)), i] = 255
-    print(np.unique(img_out, axis=0, return_counts=True))
     img_out = np.reshape(img_out, (img.shape[:2] + (3,)))
     return img_out
 
 
 def save_result(npyfile):
+    npyfile=np.array(npyfile)
+    npyfile=npyfile[3, :]
     print(npyfile.shape)
     for i, item in enumerate(npyfile):
         print(i, item.shape)
         img = label_visualize(item)
         img = Image.fromarray(img.astype(np.uint8))
         img = img.resize((612, 792))
-        img.save('./results/result_{}.png'.format(i))
+        img.save('./results/result_{}_3.png'.format(i))
 
 
 if __name__ == "__main__":
     testGene = test_generator('./test_data/')
     num_class = 3
-    model = Unet(num_class)
+    model = Unet(num_class, deep_supervision=True)
     color_map = np.eye(num_class)
-    model.model.load_weights('./unet_membrane_residual.hdf5')
+    model.model.load_weights('./unet_membrane_nested_deep.hdf5')
     results = model.model.predict(testGene, verbose=1)
     save_result(results)

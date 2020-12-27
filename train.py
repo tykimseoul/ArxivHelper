@@ -105,9 +105,9 @@ def yield_generator(image_generator, mask_generator):
     train_generator = zip(image_generator, mask_generator)
     for (img, mask) in train_generator:
         img, boundary, mask = adjust_data(img, mask, num_class)
-        print(img.shape, boundary.shape, mask.shape)
-        print(np.stack((img, boundary), axis=3).shape)
-        yield np.squeeze(np.stack((img, boundary), axis=3), axis=4), mask
+        # print(img.shape, mask.shape)
+#         yield np.squeeze(np.stack((img, boundary), axis=3), axis=4), mask
+        yield img, mask
 
 
 if __name__ == "__main__":
@@ -127,6 +127,6 @@ if __name__ == "__main__":
     generator = train_data_generator(1, '/kaggle/input/dataset/train_unet', '/kaggle/input/dataset/masks_unet', 'train_unet', 'masks_unet', data_gen_args, image_color_mode="grayscale", mask_color_mode="rgb", save_to_dir=None)
     train_generator = yield_generator(generator[0], generator[1])
     valid_generator = yield_generator(generator[2], generator[3])
-    model = Unet(num_class)
+    model = Unet(num_class, deep_supervision=True)
     model_checkpoint = ModelCheckpoint('/kaggle/working/unet_membrane_title.hdf5', monitor='loss', verbose=1, save_best_only=True)
     # history = model.model.fit(train_generator, validation_data=valid_generator, validation_steps=200, steps_per_epoch=2000, epochs=20, callbacks=[model_checkpoint])
