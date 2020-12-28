@@ -5,6 +5,8 @@ venv/lib
 venv/man
 __pycache__
 tmp
-results
 test_data
 train_data
+*.hdf5
+*.npz
+*.zip

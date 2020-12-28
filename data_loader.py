@@ -33,8 +33,8 @@ class DataLoader():
             covers.append(cover)
             masks.append(mask)
 
-        covers = np.array(covers) / 127.5 - 1.
-        masks = np.array(masks) / 127.5 - 1.
+        covers = np.array(covers) / 255.0
+        masks = np.array(masks) / 255.0
 
         return covers, masks
 
@@ -45,9 +45,9 @@ class DataLoader():
             covers_path = './train_data/covers/'
         masks_path = './train_data/masks/'
 
-        self.n_batches = int(len(listdir(covers_path)) / batch_size)
+        data = list(filter(lambda f: not f.startswith('.'), sorted(listdir(covers_path))))[::3]
+        self.n_batches = int(len(data) / batch_size)
 
-        data = list(filter(lambda f: not f.startswith('.'), sorted(listdir(covers_path))))
 
         for i in range(self.n_batches - 1):
             batch = data[i * batch_size:(i + 1) * batch_size]
@@ -66,7 +66,7 @@ class DataLoader():
                 covers.append(cover)
                 masks.append(mask)
 
-            covers = np.array(covers) / 127.5 - 1.
-            masks = np.array(masks) / 127.5 - 1.
+            covers = np.array(covers) / 255.0
+            masks = np.array(masks) / 255.0
 
             yield covers, masks

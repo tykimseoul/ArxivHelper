@@ -8,6 +8,9 @@ import matplotlib.pyplot as plt
 from model import Unet
 from data_loader import DataLoader
 
+from tensorflow.keras.models import *
+from tensorflow.keras.layers import *
+
 
 class Pix2Pix:
     def __init__(self):
@@ -24,7 +27,7 @@ class Pix2Pix:
                                       img_res=(self.img_rows, self.img_cols))
 
         # Calculate output shape of D (PatchGAN)
-        patch = int(self.img_rows / 2 ** 4)
+        patch = int(self.img_rows / 2 ** 3)
         self.disc_patch = (patch, patch, 1)
 
         # Number of filters in the first layer of G and D
@@ -37,7 +40,8 @@ class Pix2Pix:
         self.discriminator = self.build_discriminator()
         self.discriminator.compile(loss='mse',
                                    optimizer=optimizer,
-                                   metrics=['accuracy'])
+                                   metrics=['accuracy'],
+                                   loss_weights=[0.5])
 
         # -------------------------
         # Construct Computational
@@ -81,20 +85,21 @@ class Pix2Pix:
                 d = tf.keras.layers.BatchNormalization(momentum=0.8)(d)
             return d
 
-        img_A = tf.keras.layers.Input(shape=self.mask_shape)
-        img_B = tf.keras.layers.Input(shape=self.cover_shape)
-        print(img_A.shape, img_B.shape)
+        img_A = Input(shape=self.mask_shape)
+        img_B = Input(shape=self.cover_shape)
+
         # Concatenate image and conditioning image by channels to produce input
-        combined_imgs = tf.keras.layers.Concatenate(axis=-1)([img_A, img_B])
+        combined_imgs = Concatenate(axis=-1)([img_A, img_B])
 
         d1 = d_layer(combined_imgs, self.df, bn=False)
         d2 = d_layer(d1, self.df * 2)
         d3 = d_layer(d2, self.df * 4)
-        d4 = d_layer(d3, self.df * 8)
+        # d4 = d_layer(d3, self.df * 8)
 
-        validity = tf.keras.layers.Conv2D(1, kernel_size=4, strides=1, padding='same')(d4)
+        d5 = Conv2D(64, kernel_size=4, strides=1, padding='same')(d3)
+        validity = Conv2D(1, kernel_size=4, strides=1, padding='same')(d5)
 
-        model = tf.keras.models.Model([img_A, img_B], validity)
+        model = Model([img_A, img_B], validity)
 
         model.summary()
 
@@ -151,9 +156,6 @@ class Pix2Pix:
 
         print(cover.shape)
         gen_imgs = np.concatenate([cover, fake_mask, mask])
-
-        # Rescale images 0 - 1
-        gen_imgs = 0.5 * gen_imgs + 0.5
 
         titles = ['Condition', 'Generated', 'Original']
         fig, axs = plt.subplots(r, c)
