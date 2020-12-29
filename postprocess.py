@@ -40,6 +40,7 @@ def draw_contour(image, contour, color):
     x, y, w, h = cv2.boundingRect(contour)
     print(x, y, w, h, cv2.contourArea(contour))
     cv2.rectangle(image, (x, y), (x + w, y + h), color, -1)
+    return x, y, w, h
 
 
 def regularize(image):
@@ -51,20 +52,22 @@ def regularize(image):
     abstract_contour = max_area(abstract_area)
 
     blank = np.zeros_like(image)
-    draw_contour(blank, title_contour, title_color)
-    draw_contour(blank, abstract_contour, abstract_color)
-    return blank
+    title_bbox = draw_contour(blank, title_contour, title_color)
+    abstract_bbox = draw_contour(blank, abstract_contour, abstract_color)
+
+    return blank, title_bbox, abstract_bbox
 
 
-for file in sorted(os.listdir('./results/')):
-    if not re.match(r'result_\d+.png', file):
-        continue
-    print(file)
-    image = cv2.cvtColor(cv2.imread('./results/' + file), cv2.COLOR_BGR2RGB)
-    regularized = regularize(image)
+if __name__ == "__main__":
+    for file in sorted(os.listdir('./results/')):
+        if not re.match(r'result_\d+.png', file):
+            continue
+        print(file)
+        image = cv2.cvtColor(cv2.imread('./results/' + file), cv2.COLOR_BGR2RGB)
+        regularized = regularize(image)
 
-    plt.figure()
-    fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(12, 6))
-    axs[0].imshow(image)
-    axs[1].imshow(regularized)
-    plt.show()
+        plt.figure()
+        fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(12, 6))
+        axs[0].imshow(image)
+        axs[1].imshow(regularized)
+        plt.show()

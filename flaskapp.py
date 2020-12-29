@@ -9,10 +9,24 @@ from PIL import Image
 import base64
 from io import BytesIO
 import os
+import numpy as np
+
+from model import Unet
+from postprocess import regularize
 
 app = Flask(__name__)
 thumbnails_dir = Path("/tmp/thumbnails")
 thumbnails_dir.mkdir(parents=True, exist_ok=True)
+
+
+def load_mode():
+    num_class = 3
+    model = Unet(num_class, input_size=(256, 256, 1), deep_supervision=False)
+    model.model.load_weights('./gan.hdf5')
+    return model.model
+
+
+model = load_mode()
 
 
 def get_html(url, t):
@@ -52,6 +66,31 @@ def extract_cvf_thumbnail(url):
     return read_thumbnail(code[1]), pdf_link
 
 
+def predict(image):
+    result = model.predict(image, verbose=1)
+    result = np.squeeze(result, axis=0)
+    result = result * 255
+    result, title_bbox, abstract_bbox = regularize(result)
+    print(title_bbox, abstract_bbox)
+    return title_bbox, abstract_bbox
+
+
+def get_cover(response):
+    with open('/tmp/downloaded.pdf', 'wb') as f:
+        f.write(response.content)
+        doc = fitz.open('/tmp/downloaded.pdf')
+        doc.select([0])
+        doc.save('/tmp/cover.pdf')
+        pix = doc[0].getPixmap(alpha=False)
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        img = img.resize((256, 256), Image.NEAREST).convert('L')
+        img = np.array(img)
+        img = img / 255
+        img = np.expand_dims(img, 2)
+        img = np.expand_dims(img, 0)
+        return img
+
+
 @app.route('/', methods=['GET'])
 def index():
     return 'hello world'
@@ -60,11 +99,10 @@ def index():
 @app.route('/paper', methods=['GET'])
 def get_paper_data():
     link = request.args.get('link')
-    if re.match(r'https://openaccess.thecvf.com/(\w+)/html/([\w-]+).html', link):
-        data = parse_cvf_page(link)
-    else:
-        data = {}
-    return json.dumps(data)
+    response = requests.get(link)
+    cover = get_cover(response)
+    bbox = predict(cover)
+    return json.dumps(bbox)
 
 
 def store_thumbnail(response, key):
