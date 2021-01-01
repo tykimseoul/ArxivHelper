@@ -1,13 +1,9 @@
 from flask import Flask, json, request
-from bs4 import BeautifulSoup
 import requests
 import re
-import time
 import fitz
 from pathlib import Path
 from PIL import Image
-import base64
-from io import BytesIO
 import os
 import numpy as np
 
@@ -27,34 +23,6 @@ def load_mode():
 
 
 model = load_mode()
-
-
-def get_html(url, t):
-    print(url)
-    try:
-        return requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
-    except requests.exceptions.ConnectionError:
-        print('pausing for {}'.format(url))
-        time.sleep(t)
-        return get_html(url, t + 5)
-
-
-def parse_cvf_page(url):
-    html = get_html(url, 5)
-    document = BeautifulSoup(html.text, "html.parser")
-    title = document.select_one('div#papertitle').text.strip()
-    authors = document.select_one('div#authors > b > i').text
-    authors = authors.split(', ')
-    abstract = document.select_one('div#abstract').text.strip()
-    thumbnail, pdf_link = extract_cvf_thumbnail(url)
-    buffer = BytesIO()
-    thumbnail.save(buffer, format="JPEG")
-    thumbnail = base64.b64encode(buffer.getvalue()).decode('utf-8')
-    print(title)
-    print(authors)
-    print(abstract)
-    print(thumbnail)
-    return {'title': title, 'authors': authors, 'abstract': abstract, 'thumbnail': thumbnail, 'pdfLink': pdf_link, 'bookmarked': False}
 
 
 def extract_cvf_thumbnail(url):
